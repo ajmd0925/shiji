@@ -1,0 +1,9 @@
+node_modules/
+dist/
+target/
+.local/
+.env
+*.log
+*.tmp.html
+test-results/
+playwright-report/

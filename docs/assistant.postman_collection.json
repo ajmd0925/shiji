@@ -1,0 +1,95 @@
+{
+  "info": {
+    "name": "拾记 Personal Assistant",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:8080" },
+    { "key": "token", "value": "" },
+    { "key": "taskId", "value": "" },
+    { "key": "reminderId", "value": "" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Windows notification service status",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/notifications/status" }
+    },
+    {
+      "name": "Health",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/health" }
+    },
+    {
+      "name": "List tasks",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/tasks" }
+    },
+    {
+      "name": "Create task",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/api/tasks",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"读完一章书\",\n  \"description\": \"今晚留一点阅读时间\",\n  \"priority\": \"NORMAL\",\n  \"completed\": false\n}"
+        }
+      }
+    },
+    {
+      "name": "List notes",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/notes" }
+    },
+    {
+      "name": "Create note",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/api/notes",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"周末灵感\",\n  \"content\": \"整理书架\",\n  \"color\": \"SAGE\",\n  \"pinned\": false\n}"
+        }
+      }
+    },
+    {
+      "name": "List reminders",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/reminders" }
+    },
+    {
+      "name": "Schedule one-time Shiji Windows notification",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.variables.set('futureTime', new Date(Date.now() + 180000).toISOString());",
+              "pm.variables.set('requestKey', pm.variables.replaceIn('{{$guid}}'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/api/reminders",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"taskId\": \"{{taskId}}\",\n  \"message\": \"记得阅读\",\n  \"scheduledAt\": \"{{futureTime}}\",\n  \"timezone\": \"Asia/Shanghai\",\n  \"requestKey\": \"{{requestKey}}\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Immediately cancel SYSTEM reminder",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/api/reminders/{{reminderId}}/cancel",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{}" }
+      }
+    }
+  ]
+}

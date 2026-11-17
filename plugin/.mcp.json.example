@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "shiji": {
+      "command": "node", "args": ["/absolute/path/to/personal-assistant/plugin/server.mjs"],
+      "env": { "ASSISTANT_CONFIG": "/absolute/path/to/personal-assistant/.local/connection.json" }
+    }
+  }
+}
