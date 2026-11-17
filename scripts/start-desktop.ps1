@@ -50,14 +50,14 @@ try {
             $mysql = Get-Content -LiteralPath $mysqlPath -Raw | ConvertFrom-Json
             $env:DB_USER = $mysql.user; $env:DB_PASSWORD = $mysql.password
             $env:DB_URL = "jdbc:mysql://127.0.0.1:$($mysql.port)/personal_assistant?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC"
-        }
+        } else { $env:SPRING_DATASOURCE_URL = 'jdbc:h2:file:' + (Join-Path $DesktopLocal 'assistant').Replace('\','/') + ';MODE=MySQL;DB_CLOSE_ON_EXIT=FALSE' }
         $instance = Get-DesktopInstance
-        # The Windows launcher narrows JAR arguments to the system code page; the relative
-        # ASCII path avoids that conversion while Windows keeps the Unicode working directory.
-        $arguments = @("-Dshiji.desktop.instance=$instance", '-jar', 'app/shiji.jar', '--server.address=127.0.0.1', "--server.port=$($settings.port)", "--spring.profiles.active=$($settings.profile)", '--assistant.desktop.enabled=true', '--assistant.reminders.channel=SYSTEM', '--assistant.reminders.worker-enabled=true')
+        $launchJar = Get-DesktopLaunchJar $jar
+        $workingDirectory = Split-Path (Split-Path $launchJar -Parent) -Parent
+        $arguments = @("-Dshiji.desktop.instance=$instance", '-jar', ('"' + $launchJar + '"'), '--server.address=127.0.0.1', "--server.port=$($settings.port)", "--spring.profiles.active=$($settings.profile)", '--assistant.desktop.enabled=true', '--assistant.reminders.channel=SYSTEM', '--assistant.reminders.worker-enabled=true')
         $inputPath = Join-Path $DesktopLocal 'desktop-stdin.txt'
         [IO.File]::WriteAllText($inputPath, '')
-        $process = Start-Process -FilePath $java -ArgumentList $arguments -WorkingDirectory $DesktopRoot -WindowStyle Hidden -PassThru -RedirectStandardInput $inputPath -RedirectStandardOutput (Join-Path $DesktopLocal 'desktop.log') -RedirectStandardError (Join-Path $DesktopLocal 'desktop-error.log')
+        $process = Start-Process -FilePath $java -ArgumentList $arguments -WorkingDirectory $workingDirectory -WindowStyle Hidden -PassThru -RedirectStandardInput $inputPath -RedirectStandardOutput (Join-Path $DesktopLocal 'desktop.log') -RedirectStandardError (Join-Path $DesktopLocal 'desktop-error.log')
     } finally {
         foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process') }
     }

@@ -9,6 +9,13 @@ function Write-DesktopJson($Path, $Value) {
     Move-Item -LiteralPath $temp -Destination $Path -Force
 }
 
+function Get-DesktopFileHash([string]$LiteralPath) {
+    $hash = [Security.Cryptography.SHA256]::Create()
+    $stream = [IO.File]::OpenRead($LiteralPath)
+    try { return [pscustomobject]@{Hash=[BitConverter]::ToString($hash.ComputeHash($stream)).Replace('-','').ToLowerInvariant()} }
+    finally { $stream.Dispose(); $hash.Dispose() }
+}
+
 function Test-DesktopJavaCandidate([string]$Candidate) {
         if (!(Test-Path -LiteralPath $Candidate)) { return $false }
         $info = New-Object Diagnostics.ProcessStartInfo
@@ -32,6 +39,21 @@ function Test-DesktopJavaCandidate([string]$Candidate) {
 
 function Get-DesktopJava {
     $bundled = Join-Path $DesktopRoot 'runtime\bin\java.exe'
+    if ($DesktopRoot -match '[^\x00-\x7f]' -and (Test-Path -LiteralPath $bundled)) {
+        $runtimeDir = Join-Path $DesktopRoot 'runtime'
+        $runtimeId = (Get-DesktopFileHash -LiteralPath (Join-Path $runtimeDir 'release')).Hash
+        $cacheRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Shiji\runtimes'
+        $cache = Join-Path $cacheRoot $runtimeId
+        $cachedJava = Join-Path $cache 'bin\java.exe'
+        if (!(Test-Path -LiteralPath $cachedJava)) {
+            New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+            $temporary = Join-Path $cacheRoot ([guid]::NewGuid().ToString() + '.tmp')
+            Copy-Item -LiteralPath $runtimeDir -Destination $temporary -Recurse
+            try { Move-Item -LiteralPath $temporary -Destination $cache }
+            catch { if (!(Test-Path -LiteralPath $cachedJava)) { throw } }
+        }
+        if (Test-DesktopJavaCandidate $cachedJava) { return $cachedJava }
+    }
     $candidates = @($bundled)
     if ($env:JAVA_HOME) { $candidates += [IO.Path]::Combine($env:JAVA_HOME, 'bin\java.exe') }
     $command = Get-Command java.exe -ErrorAction SilentlyContinue
@@ -49,7 +71,7 @@ function Get-DesktopJava {
         if ($candidate -eq $bundled -and $script:DesktopJavaError -match 'could not find java.dll') {
             try {
                 $runtimeDir = Join-Path $DesktopRoot 'runtime'
-                $runtimeId = (Get-FileHash -LiteralPath (Join-Path $runtimeDir 'release') -Algorithm SHA256).Hash.ToLowerInvariant()
+                $runtimeId = (Get-DesktopFileHash -LiteralPath (Join-Path $runtimeDir 'release')).Hash
                 $cacheRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Shiji\runtimes'
                 $cache = Join-Path $cacheRoot $runtimeId
                 $cachedJava = Join-Path $cache 'bin\java.exe'
@@ -68,6 +90,20 @@ function Get-DesktopJava {
         }
     }
     return $null
+}
+
+function Get-DesktopLaunchJar([string]$Jar) {
+    if ($DesktopRoot -notmatch '[^\x00-\x7f]') { return $Jar }
+    # Java's Windows native launcher also narrows its working directory and JAR path.
+    # Only immutable program files are cached; the database remains in DesktopLocal.
+    $cache = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) ('Shiji\instances\' + (Get-DesktopInstance))
+    $appDir = Join-Path $cache 'app'
+    New-Item -ItemType Directory -Force -Path $appDir | Out-Null
+    $cachedJar = Join-Path $appDir 'shiji.jar'
+    if (!(Test-Path -LiteralPath $cachedJar) -or (Get-DesktopFileHash -LiteralPath $cachedJar).Hash -ne (Get-DesktopFileHash -LiteralPath $Jar).Hash) {
+        Copy-Item -LiteralPath $Jar -Destination $cachedJar -Force
+    }
+    return $cachedJar
 }
 
 function Enter-DesktopLock {
