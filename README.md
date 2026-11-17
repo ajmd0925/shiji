@@ -23,7 +23,7 @@ cd shiji
 
 ## 安装与启动
 
-普通使用者可从仓库 **Releases** 下载 `shiji-版本-windows-x64.zip`，完整解压后双击 `Start.cmd`。便携版自带 Java 和编译后的页面，首次自动连接、注册本机通知，无需安装开发工具或 MySQL。`Check.cmd` 检查环境，`Stop.cmd` 正常停止。默认使用 H2 本地文件数据库，MySQL 为可选配置；两种模式的数据独立。详情见 [下载版使用说明](docs/distribution.md)。源码 ZIP 不能直接双击运行。
+普通使用者可从仓库 [Releases 下载页](https://github.com/ajmd0925/shiji/releases) 下载 `shiji-版本-windows-x64.zip`，完整解压后双击 `Start.cmd`。便携版自带 Java 和编译后的页面，首次自动连接、注册本机通知，无需安装开发工具或 MySQL。`Check.cmd` 检查环境，`Stop.cmd` 正常停止。默认使用 H2 本地文件数据库，MySQL 为可选配置；两种模式的数据独立。详情见 [下载版使用说明](docs/distribution.md)。源码 ZIP 不能直接双击运行。
 
 以下为源码开发方式：
 
@@ -137,4 +137,4 @@ node scripts/test-system-notifications.mjs
 
 源码为 `backend/`、`frontend/`、`plugin/`、`scripts/` 和 `docs/`。`.local/`、`.env`、生成的 `plugin/.mcp.json`、依赖、数据库、日志及截图均被忽略，不上传 GitHub。仓库不携带用户数据、访问令牌、账号凭据或 MySQL ZIP。
 
-当前面向单人本机使用，后端只绑定本机。尚未加入多人账号、互联网部署及完整迁移版本框架；公开部署需另行设计鉴权、HTTPS 和正式数据库迁移。源码仓库：https://github.com/ajmd0925/shiji。
+当前面向单人本机使用，后端只绑定本机。尚未加入多人账号、互联网部署及完整迁移版本框架；公开部署需另行设计鉴权、HTTPS 和正式数据库迁移。源码仓库：[拾记 GitHub 仓库](https://github.com/ajmd0925/shiji)。

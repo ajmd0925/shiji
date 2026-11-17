@@ -24,7 +24,7 @@ description: 用拾记管理个人任务、备忘录及一次性提醒，并通�
 7. 到点通知遵循宿主通知格式。用户要求保留记录时，提醒流程还需等待用户确认和删除决定，不提前删除。不要额外安排轮询或重复提醒。
 8. 仅当用户明确反馈收到通知后写 RECEIVED。用户要求取消时先 reminder_cancel；创建期间也可提交取消。原生创建结果回写不能覆盖 CANCEL_PENDING，应绑定真实标识后继续取消。宿主删除成功后才写 CANCELLED；失败保留待取消。未绑定的 PENDING 可直接取消。发送后的 FIRED/RECEIVED 仅暂停原生自动化防重复，保留业务状态和记录。
 
-已授权启用的“拾记自动同步”约每分钟检查页面请求，无需用户每次再发送同步指令。保持 Codex 和本地后端运行；调度与模型执行会增加延迟，不保证实时。用 reminder_sync_check 领取本轮队列，优先取消、核对 CREATING、再创建；完成后 reminder_sync_complete。普通成功与空队列 DONT_NOTIFY，需用户介入才 NOTIFY。详细步骤见 [自动同步流程](references/auto-sync.md)。过期请求保留，不挪到次日或次年。
+已授权启用的“拾记自动同步”约每分钟检查页面请求，无需用户每次再发送同步指令。保持 Codex 和本地后端运行；调度与模型执行会增加延迟，不保证实时。用 reminder_sync_check 领取本轮队列，优先取消、核对 CREATING、再创建；完成后 reminder_sync_complete。普通成功与空队列 DONT_NOTIFY，需用户介入才 NOTIFY。详细步骤见 [自动同步流程](auto-sync.md)。过期请求保留，不挪到次日或次年。
 
 用户已授权的创建、取消和同步不逐条额外询问。遵守宿主执行权限；不能为了减少确认修改全局审批或安全配置。CLI/MCP 不直接修改 Codex 的 SQLite/TOML，原生变化均走宿主工具。
 

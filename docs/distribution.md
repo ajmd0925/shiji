@@ -1,6 +1,6 @@
 # Windows 下载与首次使用
 
-GitHub 仓库的 Releases 中下载 `shiji-版本-windows-x64.zip`；GitHub 自动生成的 Source code ZIP 是源码，不能直接启动。
+在 [GitHub Releases 下载页](https://github.com/ajmd0925/shiji/releases) 下载 `shiji-版本-windows-x64.zip`；GitHub 自动生成的 Source code ZIP 是源码，不能直接启动。
 
 将完整 ZIP 解压到可写目录，双击 `Start.cmd`。便携版自带 Eclipse Temurin Java 21 运行时、Spring Boot 应用和编译后的 Vue 页面，无需安装开发工具、MySQL 或 Codex。首次注册通知、生成本机访问密钥，打开并自动连接页面。原页面设计不变。
 
