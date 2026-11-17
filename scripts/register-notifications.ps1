@@ -1,5 +1,7 @@
 param([string]$BridgePath, [string]$AppUrl = 'http://127.0.0.1:5173/')
 $ErrorActionPreference = 'Stop'
+$OutputEncoding = New-Object Text.UTF8Encoding($false)
+[Console]::OutputEncoding = $OutputEncoding
 Add-Type -Path (Join-Path $PSScriptRoot 'windows-shortcut.cs')
 $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Shiji.lnk'
 [ShijiShortcut]::Create($shortcut, (Join-Path $env:WINDIR 'explorer.exe'), $AppUrl)

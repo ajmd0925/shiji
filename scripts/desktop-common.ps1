@@ -16,10 +16,22 @@ function Get-DesktopJava {
     if ($command) { $candidates += $command.Source }
     foreach ($candidate in ($candidates | Select-Object -Unique)) {
         if (!(Test-Path -LiteralPath $candidate)) { continue }
-        $oldPreference = $ErrorActionPreference
-        try { $ErrorActionPreference = 'Continue'; $version = & $candidate --version 2>$null | Out-String }
-        finally { $ErrorActionPreference = $oldPreference }
-        if ($version -match '(?m)^(?:openjdk|java) 21[.\s\-]') { return $candidate }
+        $info = New-Object Diagnostics.ProcessStartInfo
+        $info.FileName = $candidate; $info.Arguments = '--version'
+        $info.UseShellExecute = $false; $info.CreateNoWindow = $true
+        $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
+        $probe = New-Object Diagnostics.Process
+        $probe.StartInfo = $info
+        try {
+            $null = $probe.Start()
+            $stdout = $probe.StandardOutput.ReadToEndAsync()
+            $stderr = $probe.StandardError.ReadToEndAsync()
+            if (!$probe.WaitForExit(10000)) { $probe.Kill(); throw 'Java version check timed out.' }
+            $version = $stdout.Result
+            if ($probe.ExitCode -eq 0 -and $version -match '(?m)^(?:openjdk|java) 21[.\s\-]') { return $candidate }
+            $script:DesktopJavaError = "Java probe failed: exit=$($probe.ExitCode); stdout=$version; stderr=$($stderr.Result)"
+        } catch { $script:DesktopJavaError = $_.Exception.Message }
+        finally { $probe.Dispose() }
     }
     return $null
 }

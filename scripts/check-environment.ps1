@@ -5,7 +5,7 @@ function Add-Check($Name, $Ok, $Detail) { $checks.Add([pscustomobject]@{ name=$N
 Add-Check 'Windows x64' ([Environment]::OSVersion.Platform -eq 'Win32NT' -and [Environment]::Is64BitOperatingSystem -and $env:PROCESSOR_ARCHITECTURE -ne 'ARM64') 'The release supports Windows 10/11 x64.'
 Add-Check 'PowerShell 5.1+' ($PSVersionTable.PSVersion -ge [version]'5.1') $PSVersionTable.PSVersion.ToString()
 $java = Get-DesktopJava
-Add-Check 'Java 21' ([bool]$java) $(if ($java) { $java } else { 'Use the Windows portable ZIP (bundled runtime), or set JAVA_HOME to Java 21.' })
+Add-Check 'Java 21' ([bool]$java) $(if ($java) { $java } else { 'Use the Windows portable ZIP (bundled runtime), or set JAVA_HOME to Java 21. ' + $script:DesktopJavaError })
 Add-Check 'Application package' (Test-Path -LiteralPath (Join-Path $DesktopRoot 'app\shiji.jar')) 'Source ZIP is not the portable package. Build with scripts/package-windows.ps1, or download a Release asset.'
 $writable = $false
 try {
