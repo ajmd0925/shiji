@@ -7,3 +7,4 @@ target/
 *.tmp.html
 test-results/
 playwright-report/
+release/

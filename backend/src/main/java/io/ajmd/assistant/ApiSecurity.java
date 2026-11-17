@@ -8,6 +8,7 @@ import java.security.MessageDigest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.UrlPathHelper;
 
 @Component
 class ApiSecurity extends OncePerRequestFilter {
@@ -17,7 +18,12 @@ class ApiSecurity extends OncePerRequestFilter {
         expected = ("Bearer " + token).getBytes(StandardCharsets.UTF_8);
     }
     @Override protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain) throws ServletException, IOException {
-        if (req.getRequestURI().equals("/api/health")) { chain.doFilter(req, res); return; }
+        String path = UrlPathHelper.defaultInstance.getPathWithinApplication(req);
+        // The release serves the compiled Vue app; only API data needs a bearer token.
+        if (!(path.equals("/api") || path.startsWith("/api/")) || path.equals("/api/health")) {
+            res.setHeader("Referrer-Policy", "no-referrer");
+            chain.doFilter(req, res); return;
+        }
         String header = req.getHeader("Authorization");
         if (header == null || !MessageDigest.isEqual(expected, header.getBytes(StandardCharsets.UTF_8))) {
             res.setStatus(401); res.setContentType("application/json;charset=UTF-8");

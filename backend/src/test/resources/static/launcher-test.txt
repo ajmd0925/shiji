@@ -1,0 +1,1 @@
+public static asset for portable launcher regression test

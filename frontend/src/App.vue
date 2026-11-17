@@ -344,6 +344,13 @@ async function copyPrompt() {
   }
 }
 onMounted(() => {
+  // Launcher passes the local secret in the fragment, which is never sent to the server.
+  const launch = new URLSearchParams(location.hash.slice(1));
+  const launchToken = launch.get("shiji-token");
+  if (launchToken && /^[a-f0-9]{64}$/.test(launchToken)) {
+    sessionStorage.setItem("assistant-token", launchToken);
+    history.replaceState(null, "", location.pathname + location.search);
+  }
   if (sessionStorage.getItem("assistant-token")) load();
   timer = setInterval(() => {
     now.value = new Date();

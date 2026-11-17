@@ -41,6 +41,13 @@ class ApiTest {
         mvc.perform(get("/api/tasks")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/notes").contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/tasks").header("Authorization","Bearer bad")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/not-found")).andExpect(status().isUnauthorized());
+        mvc.perform(get(java.net.URI.create("/%61pi/tasks"))).andExpect(status().isUnauthorized());
+        mvc.perform(get("/launcher-test.txt")).andExpect(status().isOk())
+            .andExpect(header().string("Referrer-Policy", "no-referrer"));
+        mvc.perform(post("/api/desktop/shutdown")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/desktop/shutdown").header("Authorization", token)).andExpect(status().isNotFound());
     }
     @Test void taskCrudAndCompletion() throws Exception {
         String id=task().get("id").asText();
