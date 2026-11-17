@@ -2,7 +2,7 @@ param([Parameter(Mandatory=$true)][string]$Archive, [switch]$BrowserChecks)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $archivePath = (Resolve-Path -LiteralPath $Archive).Path
-$testRoot = Join-Path $root ('.local\portable-tests\' + [guid]::NewGuid().ToString() + '\全新安装 with spaces')
+$testRoot = Join-Path $root ('.local\portable-tests\' + [guid]::NewGuid().ToString() + '\全新安装 📝 with spaces')
 New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
 Expand-Archive -LiteralPath $archivePath -DestinationPath $testRoot
 $install = (Get-ChildItem -LiteralPath $testRoot -Directory | Select-Object -First 1).FullName
@@ -73,6 +73,7 @@ try {
     Assert-Portable ((Get-StatusCode '/api/desktop/shutdown' 'POST') -eq 401) 'shutdown requires token'
     $task = Invoke-RestMethod ($BaseUrl + '/api/tasks') -Method Post -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes('{"title":"全新安装持久化测试","description":"portable test","priority":"NORMAL","completed":false}'))
     Assert-Portable ([bool]$task.id) 'create task in clean local database'
+    Assert-Portable (Test-Path -LiteralPath (Join-Path $install '.local/assistant.mv.db')) 'database stays in the original Unicode installation folder'
     $statePath = Join-Path $install '.local/desktop-process.json'
     $firstState = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     $null = Run-Launcher 'start-desktop.ps1' @('-NoBrowser','-SkipNotificationSetup')

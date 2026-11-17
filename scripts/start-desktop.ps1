@@ -51,14 +51,17 @@ try {
             $env:DB_USER = $mysql.user; $env:DB_PASSWORD = $mysql.password
             $env:DB_URL = "jdbc:mysql://127.0.0.1:$($mysql.port)/personal_assistant?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC"
         }
-        $arguments = @('-jar', ('"' + $jar + '"'), '--server.address=127.0.0.1', "--server.port=$($settings.port)", "--spring.profiles.active=$($settings.profile)", '--assistant.desktop.enabled=true', '--assistant.reminders.channel=SYSTEM', '--assistant.reminders.worker-enabled=true')
+        $instance = Get-DesktopInstance
+        # The Windows launcher narrows JAR arguments to the system code page; the relative
+        # ASCII path avoids that conversion while Windows keeps the Unicode working directory.
+        $arguments = @("-Dshiji.desktop.instance=$instance", '-jar', 'app/shiji.jar', '--server.address=127.0.0.1', "--server.port=$($settings.port)", "--spring.profiles.active=$($settings.profile)", '--assistant.desktop.enabled=true', '--assistant.reminders.channel=SYSTEM', '--assistant.reminders.worker-enabled=true')
         $inputPath = Join-Path $DesktopLocal 'desktop-stdin.txt'
         [IO.File]::WriteAllText($inputPath, '')
         $process = Start-Process -FilePath $java -ArgumentList $arguments -WorkingDirectory $DesktopRoot -WindowStyle Hidden -PassThru -RedirectStandardInput $inputPath -RedirectStandardOutput (Join-Path $DesktopLocal 'desktop.log') -RedirectStandardError (Join-Path $DesktopLocal 'desktop-error.log')
     } finally {
         foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process') }
     }
-    Write-DesktopJson (Join-Path $DesktopLocal 'desktop-process.json') @{pid=$process.Id; startedTicks=$process.StartTime.ToUniversalTime().Ticks.ToString(); port=$settings.port; profile=$settings.profile}
+    Write-DesktopJson (Join-Path $DesktopLocal 'desktop-process.json') @{pid=$process.Id; startedTicks=$process.StartTime.ToUniversalTime().Ticks.ToString(); port=$settings.port; profile=$settings.profile; instance=$instance}
     Write-DesktopJson $settingsPath $settings
     Write-DesktopJson (Join-Path $DesktopLocal 'connection.json') $connection
     Write-Host 'Starting Shiji. First startup may take up to 90 seconds...'

@@ -76,6 +76,12 @@ function Enter-DesktopLock {
     catch { throw 'Another Shiji start/stop operation is running. Retry when it finishes.' }
 }
 
+function Get-DesktopInstance {
+    $hash = [Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($DesktopRoot.ToLowerInvariant()))).Replace('-','').ToLowerInvariant() }
+    finally { $hash.Dispose() }
+}
+
 function Get-DesktopProcess($State) {
     if (!$State -or !$State.pid) { return $null }
     $process = Get-Process -Id $State.pid -ErrorAction SilentlyContinue
@@ -84,7 +90,10 @@ function Get-DesktopProcess($State) {
     if ($process.StartTime.ToUniversalTime().Ticks.ToString() -ne [string]$State.startedTicks) { return $null }
     $native = Get-CimInstance Win32_Process -Filter "ProcessId=$($State.pid)"
     $jar = Join-Path $DesktopRoot 'app\shiji.jar'
-    if (!$native.CommandLine -or !$native.CommandLine.Contains($jar)) { return $null }
+    if (!$native.CommandLine) { return $null }
+    if ($State.instance) {
+        if ($State.instance -ne (Get-DesktopInstance) -or !$native.CommandLine.Contains("-Dshiji.desktop.instance=$($State.instance)")) { return $null }
+    } elseif (!$native.CommandLine.Contains($jar)) { return $null }
     return $process
 }
 
