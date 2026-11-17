@@ -22,7 +22,7 @@ GitHub 仓库的 Releases 中下载 `shiji-版本-windows-x64.zip`；GitHub 自�
 - 未打开页面：看 `.local/desktop.log`、`.local/desktop-error.log`，运行 `Check.cmd`。不要公开发送日志中的个人任务内容或密钥。
 - 没有通知横幅：保持 Windows 已登录且唤醒，允许拾记通知横幅，并检查请勿打扰。停止后台、关机或休眠时不会实时提醒；恢复仅补发五分钟内的到期记录。
 - 首次注册失败：执行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\register-notifications.ps1 -BridgePath .\scripts\windows-notifications.ps1 -AppUrl http://127.0.0.1:17861/`，检查 Windows 通知设置后重试。
-- 路径含中文和空格：便携版默认 H2 支持。放在个人可写文件夹，不要放入 ZIP 内、Program Files 或只读同步位置。
+- 路径含中文和空格：便携版默认 H2 支持。若 Java 在英文 Windows 中无法从中文路径加载自身 DLL，先尝试 NTFS 短路径，再将包内运行时复制到当前用户 `%LOCALAPPDATA%/Shiji/runtimes/` 缓存（不下载软件，数据仍在安装目录）。若用户目录也无法提供兼容路径，诊断会提示使用纯英文字母路径。放在个人可写文件夹，不要放入 ZIP 内、Program Files 或只读同步位置。
 - 系统要求：Windows 10/11 x64，Windows PowerShell 5.1。未提供 macOS、Linux、ARM64 安装包。
 
 ## MySQL 与 Codex 可选组件

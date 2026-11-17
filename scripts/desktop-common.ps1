@@ -9,15 +9,10 @@ function Write-DesktopJson($Path, $Value) {
     Move-Item -LiteralPath $temp -Destination $Path -Force
 }
 
-function Get-DesktopJava {
-    $candidates = @((Join-Path $DesktopRoot 'runtime\bin\java.exe'))
-    if ($env:JAVA_HOME) { $candidates += [IO.Path]::Combine($env:JAVA_HOME, 'bin\java.exe') }
-    $command = Get-Command java.exe -ErrorAction SilentlyContinue
-    if ($command) { $candidates += $command.Source }
-    foreach ($candidate in ($candidates | Select-Object -Unique)) {
-        if (!(Test-Path -LiteralPath $candidate)) { continue }
+function Test-DesktopJavaCandidate([string]$Candidate) {
+        if (!(Test-Path -LiteralPath $Candidate)) { return $false }
         $info = New-Object Diagnostics.ProcessStartInfo
-        $info.FileName = $candidate; $info.Arguments = '--version'
+        $info.FileName = $Candidate; $info.Arguments = '--version'
         $info.UseShellExecute = $false; $info.CreateNoWindow = $true
         $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
         $probe = New-Object Diagnostics.Process
@@ -28,10 +23,49 @@ function Get-DesktopJava {
             $stderr = $probe.StandardError.ReadToEndAsync()
             if (!$probe.WaitForExit(10000)) { $probe.Kill(); throw 'Java version check timed out.' }
             $version = $stdout.Result
-            if ($probe.ExitCode -eq 0 -and $version -match '(?m)^(?:openjdk|java) 21[.\s\-]') { return $candidate }
+            if ($probe.ExitCode -eq 0 -and $version -match '(?m)^(?:openjdk|java) 21[.\s\-]') { return $true }
             $script:DesktopJavaError = "Java probe failed: exit=$($probe.ExitCode); stdout=$version; stderr=$($stderr.Result)"
         } catch { $script:DesktopJavaError = $_.Exception.Message }
         finally { $probe.Dispose() }
+        return $false
+}
+
+function Get-DesktopJava {
+    $bundled = Join-Path $DesktopRoot 'runtime\bin\java.exe'
+    $candidates = @($bundled)
+    if ($env:JAVA_HOME) { $candidates += [IO.Path]::Combine($env:JAVA_HOME, 'bin\java.exe') }
+    $command = Get-Command java.exe -ErrorAction SilentlyContinue
+    if ($command) { $candidates += $command.Source }
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (Test-DesktopJavaCandidate $candidate) { return $candidate }
+        if (!(Test-Path -LiteralPath $candidate)) { continue }
+        try {
+            $fileSystem = New-Object -ComObject Scripting.FileSystemObject
+            $short = $fileSystem.GetFile($candidate).ShortPath
+            if ($short -ne $candidate -and (Test-DesktopJavaCandidate $short)) { return $short }
+        } catch {}
+        # The Java Windows launcher may use the system ANSI code page to locate java.dll.
+        # English Windows can therefore fail in a Chinese path, even though the JVM supports it.
+        if ($candidate -eq $bundled -and $script:DesktopJavaError -match 'could not find java.dll') {
+            try {
+                $runtimeDir = Join-Path $DesktopRoot 'runtime'
+                $runtimeId = (Get-FileHash -LiteralPath (Join-Path $runtimeDir 'release') -Algorithm SHA256).Hash.ToLowerInvariant()
+                $cacheRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Shiji\runtimes'
+                $cache = Join-Path $cacheRoot $runtimeId
+                $cachedJava = Join-Path $cache 'bin\java.exe'
+                if (!(Test-Path -LiteralPath $cachedJava)) {
+                    New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+                    $temporary = Join-Path $cacheRoot ([guid]::NewGuid().ToString() + '.tmp')
+                    Copy-Item -LiteralPath $runtimeDir -Destination $temporary -Recurse
+                    try { Move-Item -LiteralPath $temporary -Destination $cache }
+                    catch { if (!(Test-Path -LiteralPath $cachedJava)) { throw } }
+                }
+                if (Test-DesktopJavaCandidate $cachedJava) { return $cachedJava }
+                $short = $fileSystem.GetFile($cachedJava).ShortPath
+                if (Test-DesktopJavaCandidate $short) { return $short }
+            } catch { $script:DesktopJavaError = $_.Exception.Message }
+            $script:DesktopJavaError += ' Try extracting to an ASCII-only folder if your Windows profile also contains unsupported characters.'
+        }
     }
     return $null
 }
