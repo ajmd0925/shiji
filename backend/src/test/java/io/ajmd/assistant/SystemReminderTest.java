@@ -53,6 +53,33 @@ class SystemReminderTest {
         assertThat(request("/api/reminders",data,201).get("id")).isEqualTo(first.get("id"));
         verify(notifications).ready(); verify(notifications,never()).show(any());
     }
+    @Test void desktopQuickReminderIsAtomicAndRetrySafe() throws Exception {
+        var data=Map.of("title","桌宠喝水", "message","记得喝水", "scheduledAt",Instant.now().plusSeconds(180).toString(),
+            "timezone","UTC+08:00", "requestKey",UUID.randomUUID().toString());
+        var first=request("/api/reminders/quick",data,201);
+        assertThat(first.path("state").asText()).isEqualTo("SCHEDULED");
+        assertThat(first.path("confirmation").asText()).contains("添加成功","UTC+08:00");
+        assertThat(request("/api/reminders/quick",data,201).path("id")).isEqualTo(first.path("id"));
+        assertThat(tasks.count()).isEqualTo(1); assertThat(reminders.count()).isEqualTo(1);
+        request("/api/reminders/"+first.path("id").asText()+"/cancel",Map.of(),200);
+        assertThat(request("/api/reminders/quick",data,201).path("state").asText()).isEqualTo("CANCELLED");
+        assertThat(tasks.count()).isEqualTo(1);
+        var changed=new HashMap<String,Object>(data); changed.put("title","另一条");
+        request("/api/reminders/quick",changed,409);
+    }
+    @Test void desktopQuickReminderRollsBackTaskWhenNotificationsUnavailable() throws Exception {
+        doThrow(new IllegalStateException("DisabledForUser")).when(notifications).ready();
+        request("/api/reminders/quick",Map.of("title","不能假装添加", "message","喝水", "scheduledAt",Instant.now().plusSeconds(180).toString(),
+            "timezone","UTC+08:00", "requestKey",UUID.randomUUID().toString()),503);
+        assertThat(tasks.count()).isZero(); assertThat(reminders.count()).isZero();
+    }
+    @Test void desktopQuickReminderRejectsInvalidTimeWithoutOrphanTasks() throws Exception {
+        request("/api/reminders/quick",Map.of("title","已过期", "message","喝水", "scheduledAt",Instant.now().minusSeconds(1).toString(),
+            "timezone","UTC+08:00", "requestKey",UUID.randomUUID().toString()),400);
+        request("/api/reminders/quick",Map.of("title","无效时区", "message","喝水", "scheduledAt",Instant.now().plusSeconds(180).toString(),
+            "timezone","Invalid/Zone", "requestKey",UUID.randomUUID().toString()),400);
+        assertThat(tasks.count()).isZero(); assertThat(reminders.count()).isZero();
+    }
     @Test void unavailableChannelDoesNotClaimSuccess() throws Exception {
         doThrow(new IllegalStateException("DisabledForUser")).when(notifications).ready();
         request("/api/reminders",input(),503); assertThat(reminders.count()).isZero();

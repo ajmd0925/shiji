@@ -144,6 +144,21 @@ function Test-DesktopPort([int]$Port) {
     try { $listener.Start(); return $true } catch { return $false } finally { $listener.Stop() }
 }
 
+function Start-DesktopPet {
+    $executable = Join-Path $DesktopRoot 'desktop\Shiji.Pet.exe'
+    if (!(Test-Path -LiteralPath $executable)) { throw 'Desktop pet is missing. Use OpenBrowser.cmd for the web panel or download the complete Windows package.' }
+    $pet = Start-Process -FilePath $executable -ArgumentList @('--root', ('"' + $DesktopRoot + '"')) -WindowStyle Normal -PassThru
+    if ($pet.WaitForExit(1500) -and $pet.ExitCode -ne 0) { throw 'Desktop pet failed to start. See .local/pet-error.log or use OpenBrowser.cmd.' }
+}
+
+function Stop-DesktopPet {
+    $signal = $null
+    try {
+        $signal = [Threading.EventWaitHandle]::OpenExisting('Local\Shiji.Pet.Stop.' + (Get-DesktopInstance))
+        $null = $signal.Set()
+    } catch [Threading.WaitHandleCannotBeOpenedException] {} finally { if ($signal) { $signal.Dispose() } }
+}
+
 function Open-DesktopPage($Connection) {
     # A fresh browser tab connects without copying the secret. Do not print this URL in logs.
     Start-Process -FilePath ($Connection.url + '/#shiji-token=' + $Connection.token)

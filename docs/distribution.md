@@ -2,9 +2,9 @@
 
 在 [GitHub Releases 下载页](https://github.com/ajmd0925/shiji/releases) 下载 `shiji-版本-windows-x64.zip`；GitHub 自动生成的 Source code ZIP 是源码，不能直接启动。
 
-将完整 ZIP 解压到可写目录，双击 `Start.cmd`。便携版自带 Eclipse Temurin Java 21 运行时、Spring Boot 应用和编译后的 Vue 页面，无需安装开发工具、MySQL 或 Codex。首次注册通知、生成本机访问密钥，打开并自动连接页面。原页面设计不变。
+将完整 ZIP 解压到可写目录，双击 `Start.cmd`。便携版自带 Eclipse Temurin Java 21 运行时、Spring Boot 应用和编译后的 Vue 页面，无需安装开发工具、MySQL 或 Codex。首次注册通知、生成本机访问密钥并显示桌宠。点击小猫可添加提醒、备忘录、任务，查看/取消提醒，查看和编辑备忘录、完成任务，不需要打开浏览器。原网页设计不变，双击 `OpenBrowser.cmd` 或在桌宠中选择“打开完整网页”即可使用。
 
-页面地址默认 `http://127.0.0.1:17861`。浏览器和命令窗口关闭后后台继续工作；双击 `Stop.cmd` 正常停止；`Check.cmd` 显示环境诊断。第一次注册会发出安装通知；是否出现横幅仍取决于 Windows「通知」和「请勿打扰」设置。
+页面地址默认 `http://127.0.0.1:17861`。浏览器和命令窗口关闭后后台继续工作；双击 `Stop.cmd` 正常停止；`Check.cmd` 显示环境诊断。桌宠默认高度 96 个逻辑像素（随 Windows 显示缩放变化），右键可选 72/96/120 三档，按住拖动位置会保存在 `.local/pet.json`。右键“收起到托盘”只隐藏桌宠，提醒继续；双击托盘图标或再次双击 `Start.cmd` 可恢复。桌宠菜单“退出拾记（停止提醒）”及 `Stop.cmd` 均会关闭后台。第一次注册会发出安装通知；是否出现横幅仍取决于 Windows「通知」和「请勿打扰」设置。
 
 不自动下载软件、不要求管理员权限、不添加 Windows 服务或开机启动。`ExecutionPolicy Bypass` 仅用于启动脚本的当前 PowerShell 进程，不修改系统策略；组织策略仍可能禁止执行。
 
@@ -23,7 +23,7 @@
 - 没有通知横幅：保持 Windows 已登录且唤醒，允许拾记通知横幅，并检查请勿打扰。停止后台、关机或休眠时不会实时提醒；恢复仅补发五分钟内的到期记录。
 - 首次注册失败：执行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\register-notifications.ps1 -BridgePath .\scripts\windows-notifications.ps1 -AppUrl http://127.0.0.1:17861/`，检查 Windows 通知设置后重试。
 - 路径含中文、emoji 和空格：Java 的 Windows 启动器受系统编码限制，因此非 ASCII 安装目录会自动将程序文件复制到当前用户 `%LOCALAPPDATA%/Shiji/` 的 `runtimes/` 和 `instances/` 缓存，再从缓存启动。不下载软件，不复制用户数据；数据库仍写入原安装目录 `.local/`。若 Windows 用户目录也无法提供兼容路径，诊断会提示使用纯英文字母路径。不要放入 ZIP 内、Program Files 或只读同步位置。
-- 系统要求：Windows 10/11 x64，Windows PowerShell 5.1。未提供 macOS、Linux、ARM64 安装包。
+- 系统要求：Windows 10/11 x64，Windows PowerShell 5.1，.NET Framework 4.8 或更新版本（桌宠）。`Check.cmd` 会检查本机 .NET；缺少时可先用 `OpenBrowser.cmd`。程序不自动安装系统组件。未提供 macOS、Linux、ARM64 安装包。
 
 ## MySQL 与 Codex 可选组件
 
@@ -39,7 +39,7 @@ MySQL 使用者仍按源码 README 运行 `scripts/start-mysql.ps1`（该开发�
 
 ## 维护者构建
 
-需要 Java 21 JDK、Maven 3.9+、Node.js 22.12+（推荐 24），以及网络或已准备的依赖缓存。构建会运行前后端构建与后端测试：
+需要 Windows .NET Framework 4.8 的 C# 编译器（系统自带）、Java 21 JDK、Maven 3.9+、Node.js 22.12+（推荐 24），以及网络或已准备的依赖缓存。构建会运行前后端构建与后端测试：
 
 ```powershell
 ./scripts/package-windows.ps1 -JavaHome 'C:/path/to/jdk-21' -Maven 'C:/path/to/mvn.cmd' -DownloadRuntime
@@ -49,6 +49,6 @@ MySQL 使用者仍按源码 README 运行 `scripts/start-mysql.ps1`（该开发�
 
 输出在 `release/`，不会纳入 Git。构建仅从固定文件清单复制，禁止携带 `.local`、数据库、令牌、开发者插件绝对路径或 node_modules。
 
-GitHub Actions 对每次推送/PR 在独立 Windows runner 构建、解压后清空开发环境变量并测试启动、API 鉴权、数据持久化、重复启动、端口冲突和停止，再上传测试产物。推送 `v*` 标签时，全部验证通过才创建 GitHub Release 及 ZIP、SHA256 下载附件。
+GitHub Actions 对每次推送/PR 在独立 Windows runner 构建、解压后清空开发环境变量并测试启动、API 鉴权、数据持久化、重复启动、端口冲突和停止，以及桌宠编译、原生客户端读写/取消、时区转换、窗口启动和单实例退出，再上传测试产物。推送 `v*` 标签时，全部验证通过才创建 GitHub Release 及 ZIP、SHA256 下载附件。
 
 该自动测试不等于真实新电脑的完整验收：runner 带有开发工具、没有普通用户桌面交互。另一台全新 Windows 机器仍需人工检查解压、双击、浏览器自动连接、通知注册/横幅、取消提醒与睡眠恢复。版本的实际验证范围见 `docs/test-report.md`，未完成的人工项不得宣称已通过。

@@ -1,5 +1,5 @@
 param(
-    [string]$Version = '0.2.0',
+    [string]$Version = '0.3.0',
     [string]$JavaHome = $env:JAVA_HOME,
     [string]$Maven = 'mvn.cmd',
     [string]$RuntimeArchive,
@@ -84,7 +84,8 @@ try {
     } finally { foreach ($key in $savedTest.Keys) { [Environment]::SetEnvironmentVariable($key,$savedTest[$key]) } }
     New-Item -ItemType Directory -Force -Path (Join-Path $stage 'app'), (Join-Path $stage 'scripts'), (Join-Path $stage 'docs') | Out-Null
     Copy-Item -LiteralPath 'backend/target/personal-assistant-0.1.0.jar' -Destination (Join-Path $stage 'app/shiji.jar')
-    foreach ($entry in @('Start.cmd','Stop.cmd','Check.cmd','LICENSE')) { Copy-Item -LiteralPath $entry -Destination $stage }
+    & (Join-Path $root 'desktop/build-pet.ps1') -OutputDirectory (Join-Path $stage 'desktop')
+    foreach ($entry in @('Start.cmd','Stop.cmd','Check.cmd','OpenBrowser.cmd','LICENSE')) { Copy-Item -LiteralPath $entry -Destination $stage }
     foreach ($entry in @('desktop-common.ps1','start-desktop.ps1','stop-desktop.ps1','check-environment.ps1','register-notifications.ps1','windows-shortcut.cs')) { Copy-Item -LiteralPath (Join-Path 'scripts' $entry) -Destination (Join-Path $stage 'scripts') }
     Copy-Item -LiteralPath 'backend/src/main/resources/windows-notifications.ps1' -Destination (Join-Path $stage 'scripts/windows-notifications.ps1')
     Copy-Item -LiteralPath 'docs/distribution.md' -Destination (Join-Path $stage 'docs/distribution.md')
@@ -105,7 +106,7 @@ try {
     Remove-Item -LiteralPath $resolvedUnpack -Recurse
     $runtimeVersion = & (Join-Path $stage 'runtime/bin/java.exe') --version | Out-String
     if ($runtimeVersion -notmatch '(?m)^openjdk 21[.\s\-]') { throw 'The runtime must be Java 21.' }
-    $manifest = @{ version=$Version; architecture='windows-x64'; defaultDatabase='H2 local file'; runtime=$runtimeMetadata; jarSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'app/shiji.jar')).Hash.ToLowerInvariant() }
+    $manifest = @{ version=$Version; architecture='windows-x64'; defaultDatabase='H2 local file'; runtime=$runtimeMetadata; jarSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'app/shiji.jar')).Hash.ToLowerInvariant(); petSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'desktop/Shiji.Pet.exe')).Hash.ToLowerInvariant() }
     [IO.File]::WriteAllText((Join-Path $stage 'manifest.json'), ($manifest | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding($false)))
     # Explicit staging allowlist above excludes .local, credentials, source caches and developer data.
     $zip = Join-Path $output ($name + '.zip')

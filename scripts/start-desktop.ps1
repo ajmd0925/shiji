@@ -1,4 +1,4 @@
-param([ValidateSet('local','mysql')][string]$Profile, [ValidateRange(1024,65535)][int]$Port, [switch]$NoBrowser, [switch]$SkipNotificationSetup)
+param([ValidateSet('local','mysql')][string]$Profile, [ValidateRange(1024,65535)][int]$Port, [switch]$NoBrowser, [switch]$SkipNotificationSetup, [switch]$Browser)
 . (Join-Path $PSScriptRoot 'desktop-common.ps1')
 $lock = Enter-DesktopLock
 try {
@@ -18,7 +18,9 @@ try {
         $connection = Get-Content -LiteralPath (Join-Path $DesktopLocal 'connection.json') -Raw | ConvertFrom-Json
         $status = Invoke-RestMethod ($connection.url + '/api/desktop/status') -Headers @{Authorization=('Bearer ' + $connection.token)} -TimeoutSec 5
         if ($status.application -ne 'shiji') { throw 'Running process identity check failed.' }
-        if (!$NoBrowser) { Open-DesktopPage $connection }
+        if (!$NoBrowser) {
+            if ($Browser) { Open-DesktopPage $connection } else { Start-DesktopPet }
+        }
         Write-Host "Shiji is already running at $($connection.url)."; return
     }
     if (!(Test-DesktopPort $settings.port)) { throw "Port $($settings.port) is occupied. Run scripts/start-desktop.ps1 -Port <free port>. No existing process was changed." }
@@ -49,8 +51,9 @@ try {
             if (!(Test-Path -LiteralPath $mysqlPath)) { throw 'MySQL mode requires .local/mysql-connection.json. See docs/distribution.md. Local mode needs no MySQL installation.' }
             $mysql = Get-Content -LiteralPath $mysqlPath -Raw | ConvertFrom-Json
             $env:DB_USER = $mysql.user; $env:DB_PASSWORD = $mysql.password
+            $env:SPRING_DATASOURCE_USERNAME = $mysql.user; $env:SPRING_DATASOURCE_PASSWORD = $mysql.password
             $env:DB_URL = "jdbc:mysql://127.0.0.1:$($mysql.port)/personal_assistant?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC"
-        } else { $env:SPRING_DATASOURCE_URL = 'jdbc:h2:file:' + (Join-Path $DesktopLocal 'assistant').Replace('\','/') + ';MODE=MySQL;DB_CLOSE_ON_EXIT=FALSE' }
+        } else { $env:SPRING_DATASOURCE_USERNAME = 'sa'; $env:SPRING_DATASOURCE_PASSWORD = ''; $env:SPRING_DATASOURCE_URL = 'jdbc:h2:file:' + (Join-Path $DesktopLocal 'assistant').Replace('\','/') + ';MODE=MySQL;DB_CLOSE_ON_EXIT=FALSE' }
         $instance = Get-DesktopInstance
         $launchJar = Get-DesktopLaunchJar $jar
         $workingDirectory = Split-Path (Split-Path $launchJar -Parent) -Parent
@@ -76,7 +79,9 @@ try {
         Start-Sleep -Seconds 1
     }
     if (!$ready) { throw 'Startup timed out. See .local/desktop.log; use Stop.cmd before retrying.' }
-    if (!$NoBrowser) { Open-DesktopPage $connection }
+    if (!$NoBrowser) {
+        if ($Browser) { Open-DesktopPage $connection } else { Start-DesktopPet }
+    }
     Write-Host "Shiji is ready at $($connection.url). Database: $($settings.profile)."
-    Write-Host 'Browser and terminal may close. Keep Windows awake and signed in. Stop.cmd closes this app cleanly.'
+    Write-Host 'Click the desktop pet to add reminders, notes or tasks. Keep Windows awake and signed in. Stop.cmd closes the pet and backend.'
 } finally { $lock.Dispose() }

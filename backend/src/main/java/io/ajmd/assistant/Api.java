@@ -29,6 +29,25 @@ class Api {
         @NotBlank @Size(max=100) String requestKey) {
         ReminderInput { if(scheduledAt!=null) scheduledAt=scheduledAt.truncatedTo(java.time.temporal.ChronoUnit.MILLIS); }
     }
+    record QuickReminderInput(@NotBlank @Size(max=160) String title, @NotBlank @Size(max=2000) String message,
+        @NotNull Instant scheduledAt, @NotBlank @Size(max=64) String timezone,
+        @NotBlank @Size(max=100) String requestKey) {}
+
+    /** A desktop quick reminder saves its task and schedule in one transaction. */
+    @PostMapping("/reminders/quick") @ResponseStatus(HttpStatus.CREATED)
+    Reminder quickReminder(@Valid @RequestBody QuickReminderInput input) {
+        var existing=reminders.findByRequestKey(input.requestKey());
+        if(existing.isPresent()) {
+            Reminder r=existing.get();
+            if(!r.title.equals(input.title().strip()) || !r.message.equals(input.message()) ||
+                !r.scheduledAt.equals(input.scheduledAt().truncatedTo(java.time.temporal.ChronoUnit.MILLIS)) ||
+                !r.timezone.equals(input.timezone())) throw conflict("请求标识已用于其他提醒");
+            return r;
+        }
+        Task task=tasks.saveAndFlush(apply(new Task(),new TaskInput(input.title(),"","NORMAL",null,false)));
+        return createReminder(new ReminderInput(task.id,input.message(),input.scheduledAt(),input.timezone(),input.requestKey()));
+    }
+
     record ReminderEvent(@NotBlank @Pattern(regexp="SCHEDULED|PAUSED|FIRED|RECEIVED|FAILED|CANCELLED") String state,
         @Size(max=200) String automationId, @Size(max=1000) String detail, Instant verifiedScheduledAt) {}
 

@@ -40,6 +40,7 @@ class ApiTest {
         mvc.perform(get("/api/health")).andExpect(status().isOk());
         mvc.perform(get("/api/tasks")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/notes").contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/reminders/quick").contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/tasks").header("Authorization","Bearer bad")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/not-found")).andExpect(status().isUnauthorized());

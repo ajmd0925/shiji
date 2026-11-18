@@ -1,6 +1,6 @@
 # 拾记 · 个人任务助手
 
-独立的个人任务、备忘录和一次性提醒系统。Vue 3 + Element Plus、Spring Boot + REST、MySQL、Maven，附 Codex MCP 插件与技能，使用 MIT 许可证。与作品集项目分开维护。
+独立的个人任务、备忘录和一次性提醒系统，带可拖动的 Windows 小桌宠入口。Vue 3 + Element Plus、Spring Boot + REST、MySQL、Maven，附 Codex MCP 插件与技能，使用 MIT 许可证。与作品集项目分开维护。
 
 ## 提醒如何工作
 
@@ -23,11 +23,11 @@ cd shiji
 
 ## 安装与启动
 
-普通使用者可从仓库 [Releases 下载页](https://github.com/ajmd0925/shiji/releases) 下载 `shiji-版本-windows-x64.zip`，完整解压后双击 `Start.cmd`。便携版自带 Java 和编译后的页面，首次自动连接、注册本机通知，无需安装开发工具或 MySQL。`Check.cmd` 检查环境，`Stop.cmd` 正常停止。默认使用 H2 本地文件数据库，MySQL 为可选配置；两种模式的数据独立。详情见 [下载版使用说明](docs/distribution.md)。源码 ZIP 不能直接双击运行。
+普通使用者可从仓库 [Releases 下载页](https://github.com/ajmd0925/shiji/releases) 下载 `shiji-版本-windows-x64.zip`，完整解压后双击 `Start.cmd`。便携版自带 Java 和编译后的页面，首次自动连接、注册本机通知并显示桌宠，点击小猫即可添加提醒、备忘录和任务，无需安装开发工具或 MySQL。桌宠默认 96 个逻辑像素，可选 72/96/120 三档，支持拖动和收起到托盘；`OpenBrowser.cmd` 打开保留原样的完整网页。`Check.cmd` 检查环境，`Stop.cmd` 正常停止。默认使用 H2 本地文件数据库，MySQL 为可选配置；两种模式的数据独立。详情见 [下载版使用说明](docs/distribution.md)。源码 ZIP 不能直接双击运行。
 
 以下为源码开发方式：
 
-需要 Windows 10/11、Windows PowerShell 5.1（系统自带）、PowerShell 7（运行项目脚本）、Java 21、Maven 3.9+、Node.js 22.12+，推荐 Node 24。其他系统可以开发前后端，但当前通知适配器仅支持 Windows，不能宣称通知已安排。
+需要 Windows 10/11、Windows PowerShell 5.1（系统自带）、PowerShell 7（运行项目脚本）、.NET Framework 4.8（桌宠）、Java 21、Maven 3.9+、Node.js 22.12+，推荐 Node 24。其他系统可以开发前后端，但当前通知适配器仅支持 Windows，不能宣称通知已安排。
 
 ```powershell
 cd frontend
@@ -128,7 +128,7 @@ node scripts/test-system-notifications.mjs
 
 ```powershell
 ./scripts/package-windows.ps1 -DownloadRuntime
-./scripts/test-portable.ps1 -Archive './release/shiji-0.2.0-windows-x64.zip' -BrowserChecks
+./scripts/test-portable.ps1 -Archive './release/shiji-0.3.0-windows-x64.zip' -BrowserChecks -PetChecks
 ```
 
 构建需要设置 Java 21 的 `JAVA_HOME` 并让 Maven、Node 可用。显式下载并校验官方运行时；输出 ZIP 与 SHA256。GitHub Actions 在 Windows runner 上构建和验证，`v*` 标签验证通过后发布 Release。隔离安装测试与真实全新电脑的人工通知验收分别记录，不将 runner 测试视为全部兼容性验证。

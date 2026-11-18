@@ -6,6 +6,9 @@ Add-Check 'Windows x64' ([Environment]::OSVersion.Platform -eq 'Win32NT' -and [E
 Add-Check 'PowerShell 5.1+' ($PSVersionTable.PSVersion -ge [version]'5.1') $PSVersionTable.PSVersion.ToString()
 $java = Get-DesktopJava
 Add-Check 'Java 21' ([bool]$java) $(if ($java) { $java } else { 'Use the Windows portable ZIP (bundled runtime), or set JAVA_HOME to Java 21. ' + $script:DesktopJavaError })
+$frameworkRelease = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -Name Release -ErrorAction SilentlyContinue).Release
+Add-Check '.NET Framework 4.8 (desktop pet)' ($frameworkRelease -ge 528040) 'Windows desktop pet requires .NET Framework 4.8 or later. OpenBrowser.cmd remains available without the pet.'
+Add-Check 'Desktop pet package' (Test-Path -LiteralPath (Join-Path $DesktopRoot 'desktop\Shiji.Pet.exe')) 'Use the complete Windows portable ZIP; the source ZIP contains no compiled pet.'
 Add-Check 'Application package' (Test-Path -LiteralPath (Join-Path $DesktopRoot 'app\shiji.jar')) 'Source ZIP is not the portable package. Build with scripts/package-windows.ps1, or download a Release asset.'
 $writable = $false
 try {

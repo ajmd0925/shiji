@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Archive, [switch]$BrowserChecks)
+param([Parameter(Mandatory=$true)][string]$Archive, [switch]$BrowserChecks, [switch]$PetChecks)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $archivePath = (Resolve-Path -LiteralPath $Archive).Path
@@ -49,6 +49,9 @@ try {
     $env:DB_URL = 'jdbc:mysql://invalid.example:1/do-not-use'
     $env:DB_PASSWORD = 'inherited-password-must-not-be-used'
     Assert-Portable (!(Test-Path -LiteralPath (Join-Path $install '.local'))) 'archive has no user data'
+    # Diagnose against this isolated test's free port, not an existing user's 17861 service.
+    New-Item -ItemType Directory -Force -Path (Join-Path $install '.local') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $install '.local/desktop.json'), (@{ profile='local'; port=$port } | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
     $manifest = Get-Content -LiteralPath (Join-Path $install 'manifest.json') -Raw | ConvertFrom-Json
     Assert-Portable ((Get-FileHash -LiteralPath (Join-Path $install 'app/shiji.jar')).Hash -eq $manifest.jarSha256) 'application checksum matches manifest'
     Assert-Portable (!(Get-Command node.exe,mvn.cmd,java.exe -ErrorAction SilentlyContinue)) 'system Node, Maven and Java are absent from test PATH'
@@ -99,7 +102,39 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Portable browser check failed.' }
         Assert-Portable $true 'browser auto-connects and removes launch secret from address bar'
     }
-    $null = Run-Launcher 'stop-desktop.ps1'
+    if ($PetChecks) {
+        $petExecutable = Join-Path $install 'desktop/Shiji.Pet.exe'
+        Assert-Portable ((Get-FileHash -LiteralPath $petExecutable).Hash -eq $manifest.petSha256) 'desktop pet checksum matches manifest'
+        [IO.File]::WriteAllText((Join-Path $install '.local/pet-test-mode'), 'isolated installation only')
+        $nativeTest = Start-Process -FilePath $petExecutable -ArgumentList @('--root', ('"' + $install + '"'), '--self-test') -WindowStyle Hidden -PassThru
+        if (!$nativeTest.WaitForExit(60000)) { throw 'Native desktop API test timed out.' }
+        if ($nativeTest.ExitCode -ne 0) { throw 'Native desktop API test failed. Inspect isolated .local/pet-error.log.' }
+        $nativeResult = Get-Content -LiteralPath (Join-Path $install '.local/pet-self-test.json') -Raw | ConvertFrom-Json
+        Assert-Portable ($nativeResult.passed -ge 8) 'native desktop creates, retries and cancels reminders; saves Unicode notes and completes tasks'
+        $null = Run-Launcher 'start-desktop.ps1' @('-SkipNotificationSetup')
+        $instanceHash = [Security.Cryptography.SHA256]::Create()
+        try { $instance = [BitConverter]::ToString($instanceHash.ComputeHash([Text.Encoding]::UTF8.GetBytes($install.ToLowerInvariant()))).Replace('-','').ToLowerInvariant() }
+        finally { $instanceHash.Dispose() }
+        $petShow = $null
+        for ($attempt=0; $attempt -lt 30; $attempt++) {
+            try { $petShow = [Threading.EventWaitHandle]::OpenExisting('Local\Shiji.Pet.Show.' + $instance); break } catch [Threading.WaitHandleCannotBeOpenedException] { Start-Sleep -Milliseconds 300 }
+        }
+        Assert-Portable ([bool]$petShow) 'default launcher opens native transparent desktop pet'
+        $beforePet = @(Get-CimInstance Win32_Process -Filter "Name='Shiji.Pet.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($install) })
+        $null = Run-Launcher 'start-desktop.ps1' @('-SkipNotificationSetup')
+        $afterPet = @(Get-CimInstance Win32_Process -Filter "Name='Shiji.Pet.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($install) })
+        Assert-Portable ($beforePet.Count -eq 1 -and $afterPet.Count -eq 1 -and $beforePet[0].ProcessId -eq $afterPet[0].ProcessId) 'repeated start shows existing pet without duplicates'
+        $windowReport = Join-Path $install '.local/pet-window-test.json'
+        for ($attempt=0; $attempt -lt 30 -and !(Test-Path -LiteralPath $windowReport); $attempt++) { Start-Sleep -Milliseconds 300 }
+        if (!(Test-Path -LiteralPath $windowReport)) { throw 'Pet did not report a visible window after repeated start.' }
+        $windowState = Get-Content -LiteralPath $windowReport -Raw | ConvertFrom-Json
+        Assert-Portable ($windowState.petVisible -and $windowState.panelVisible -and $windowState.petSize -eq 96) 'pet and native quick panel are visible at the compact default size'
+        if ($petShow) { $petShow.Dispose() }
+        $null = Run-Launcher 'stop-desktop.ps1'
+        $petProcess = Get-Process -Id $beforePet[0].ProcessId -ErrorAction SilentlyContinue
+        if ($petProcess) { $null = $petProcess.WaitForExit(10000) }
+        Assert-Portable (!(Get-Process -Id $beforePet[0].ProcessId -ErrorAction SilentlyContinue)) 'Stop.cmd closes pet and backend together'
+    } else { $null = Run-Launcher 'stop-desktop.ps1' }
     Write-Host "Portable smoke test: $script:TestCount checks passed. Isolated installation: $install"
     Write-Host 'Notification banner and first registration on a new Windows account require an interactive desktop.'
 } finally {
