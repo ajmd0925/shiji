@@ -137,7 +137,7 @@ try {
         for ($attempt=0; $attempt -lt 30 -and !(Test-Path -LiteralPath $windowReport); $attempt++) { Start-Sleep -Milliseconds 300 }
         if (!(Test-Path -LiteralPath $windowReport)) { throw 'Pet did not report a visible window after repeated start.' }
         $windowState = Get-Content -LiteralPath $windowReport -Raw | ConvertFrom-Json
-        Assert-Portable ($windowState.petVisible -and $windowState.menuVisible -and !$windowState.panelVisible -and $windowState.petSize -eq 120 -and $windowState.menuItems -eq 4 -and $windowState.menuWidth -le 210 -and $windowState.menuHeight -le 220) 'repeated start shows compact four-option menu without a dashboard'
+        Assert-Portable ($windowState.petVisible -and $windowState.menuVisible -and !$windowState.panelVisible -and $windowState.petSize -eq 144 -and $windowState.menuItems -eq 4 -and $windowState.menuWidth -le 210 -and $windowState.menuHeight -le 220) 'repeated start shows compact four-option menu without a dashboard'
         if ($petShow) { $petShow.Dispose() }
         $null = Run-Launcher 'stop-desktop.ps1'
         $petProcess = Get-Process -Id $beforePet[0].ProcessId -ErrorAction SilentlyContinue

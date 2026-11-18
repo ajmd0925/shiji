@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -186,11 +186,20 @@ namespace Shiji.Desktop {
         private readonly Border bubble;
         private readonly FrameworkElement cat;
         private readonly TextBlock bubbleText;
+        private Image skinImage;
+        private BitmapSource originalSkin;
+        private readonly Dictionary<int, BitmapSource> crispSkinCache = new Dictionary<int, BitmapSource>();
+        private FrameworkElement skinLighting;
+        private readonly System.Windows.Shapes.Ellipse groundShadow;
+        private readonly Border shadowReaction;
+        private readonly ScaleTransform shadowBreath = new ScaleTransform(1, 1);
+        private readonly ScaleTransform shadowJump = new ScaleTransform(1, 1);
         private PanelWindow panel;
         private readonly ContextMenu menu;
         private Point down, initial;
         private bool dragging, allowClose;
-        private double petSize = 120;
+        private const int DefaultPetSize = 144;
+        private double petSize = DefaultPetSize;
         private bool motionEnabled = true;
         private readonly ScaleTransform breath = new ScaleTransform(1, 1);
         private readonly TranslateTransform idleOffset = new TranslateTransform();
@@ -200,12 +209,12 @@ namespace Shiji.Desktop {
         private readonly JavaScriptSerializer json = new JavaScriptSerializer();
         public PetWindow(AssistantClient client, string root, string identity) {
             this.client = client; local = Path.Combine(root, ".local");
+            UseLayoutRounding = true; SnapsToDevicePixels = true;
             Title = "拾记桌宠"; Width = 148; Height = 174; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = false; FontFamily = new FontFamily("Microsoft YaHei UI");
             var area = SystemParameters.WorkArea; Left = area.Right - Width - 26; Top = area.Bottom - Height - 16;
             try {
                 var saved = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(Path.Combine(local, "pet.json")));
-                petSize = Convert.ToDouble(saved["size"], CultureInfo.InvariantCulture);
-                if (petSize != 72 && petSize != 96 && petSize != 120 && petSize != 160) petSize = 120;
+                petSize = ReadPetSize(saved);
                 object savedMotion; if (saved.TryGetValue("motion", out savedMotion) && savedMotion is bool) motionEnabled = (bool)savedMotion;
                 Left = Convert.ToDouble(saved["left"], CultureInfo.InvariantCulture); Top = Convert.ToDouble(saved["top"], CultureInfo.InvariantCulture);
                 if (!double.IsNaN(Left) && !double.IsInfinity(Left)) ClampPosition(); else { Left = area.Right - Width; Top = area.Bottom - Height; }
@@ -214,6 +223,19 @@ namespace Shiji.Desktop {
             bubbleText = Theme.Text("右键我，记下小事", 12, Theme.Purple); bubbleText.Margin = new Thickness(0);
             bubble = new Border { Background = Theme.Brush("#FCFAFF"), BorderBrush = Theme.Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(13), Padding = new Thickness(10, 7, 10, 7), Width = 144, Child = bubbleText, IsHitTestVisible = false };
             Canvas.SetTop(bubble, 0); Canvas.SetLeft(bubble, 2); canvas.Children.Add(bubble);
+            groundShadow = new System.Windows.Shapes.Ellipse {
+                IsHitTestVisible = false, Opacity = 0.8,
+                Fill = new RadialGradientBrush {
+                    GradientStops = new GradientStopCollection {
+                        new GradientStop(Color.FromArgb(105, 75, 54, 106), 0),
+                        new GradientStop(Color.FromArgb(42, 97, 73, 128), 0.52),
+                        new GradientStop(Color.FromArgb(0, 110, 86, 141), 1)
+                    }
+                }, RenderTransform = shadowBreath, RenderTransformOrigin = new Point(0.5, 0.5)
+            };
+            shadowReaction = new Border { Child = groundShadow, IsHitTestVisible = false,
+                RenderTransform = shadowJump, RenderTransformOrigin = new Point(0.5, 0.5) };
+            canvas.Children.Add(shadowReaction);
             cat = CreatePetVisual();
             var transforms = new TransformGroup(); transforms.Children.Add(breath); transforms.Children.Add(tilt); transforms.Children.Add(idleOffset); transforms.Children.Add(reactionOffset);
             cat.RenderTransform = transforms; cat.RenderTransformOrigin = new Point(0.5, 0.9);
@@ -250,7 +272,7 @@ namespace Shiji.Desktop {
             trayMenu.Items.Add("打开完整网页", null, (sender, e) => client.OpenBrowser());
             trayMenu.Items.Add(new Forms.ToolStripSeparator());
             var sizeMenu = new Forms.ToolStripMenuItem("桌宠大小");
-            foreach (var size in new[] { 72, 96, 120, 160 }) { int chosen = size; sizeMenu.DropDownItems.Add((size == 72 ? "迷你" : size == 96 ? "小" : size == 120 ? "标准（默认）" : "清晰大图") + " · " + size + " px", null, (sender, e) => Dispatcher.Invoke(new Action(() => SetSize(chosen)))); }
+            foreach (var size in new[] { 72, 96, 120, 144, 160 }) { int chosen = size; sizeMenu.DropDownItems.Add((size == 72 ? "迷你" : size == 96 ? "小" : size == 120 ? "紧凑" : size == 144 ? "标准（默认）" : "清晰大图") + " · " + size + " px", null, (sender, e) => Dispatcher.Invoke(new Action(() => SetSize(chosen)))); }
             trayMenu.Items.Add(sizeMenu);
             var motionItem = new Forms.ToolStripMenuItem("启用轻动作") { Checked = motionEnabled, CheckOnClick = true };
             motionItem.Click += (sender, e) => Dispatcher.Invoke(new Action(() => { motionEnabled = motionItem.Checked; Save(); if (motionEnabled) StartMotion(); else StopMotion(); }));
@@ -266,7 +288,7 @@ namespace Shiji.Desktop {
             Closing += (sender, e) => { if (!allowClose) { e.Cancel = true; Hide(); } };
             Closed += (sender, e) => { signals.Stop(); StopMotion(); tray.Visible = false; tray.Dispose(); showSignal.Dispose(); stopSignal.Dispose(); client.Dispose(); };
             SystemParameters.StaticPropertyChanged += WorkAreaChanged;
-            Loaded += (sender, e) => { ClampPosition(); StartMotion(); };
+            Loaded += (sender, e) => { UpdateSkinRaster(); ClampPosition(); StartMotion(); };
             IsVisibleChanged += (sender, e) => { if (IsVisible) StartMotion(); else StopMotion(); };
         }
         private void WorkAreaChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e) { if (e.PropertyName == "WorkArea") ClampPosition(); }
@@ -298,6 +320,18 @@ namespace Shiji.Desktop {
             Width = Math.Max(148, petSize + 24); Height = 50 + petSize + 20;
             cat.Width = petSize; cat.Height = petSize; Canvas.SetLeft(cat, (Width - petSize) / 2);
             Canvas.SetLeft(bubble, (Width - bubble.Width) / 2);
+            shadowReaction.Width = petSize * 0.64; shadowReaction.Height = petSize * 0.105;
+            Canvas.SetLeft(shadowReaction, (Width - shadowReaction.Width) / 2 + petSize * 0.015);
+            Canvas.SetTop(shadowReaction, 50 + petSize * 0.94);
+            UpdateSkinRaster();
+        }
+        private static int ReadPetSize(IDictionary<string, object> saved) {
+            object value;
+            if (!saved.TryGetValue("size", out value)) return DefaultPetSize;
+            double size = Convert.ToDouble(value, CultureInfo.InvariantCulture);
+            // Upgrade the old standard once; keep an explicitly chosen 120 afterwards.
+            if (size == 120 && !saved.ContainsKey("sizeVersion")) return DefaultPetSize;
+            return size == 72 || size == 96 || size == 120 || size == 144 || size == 160 ? (int)size : DefaultPetSize;
         }
         private void SetSize(int size) { petSize = size; ApplySize(); ClampPosition(); Save(); }
         private bool CanAnimate() { return motionEnabled && SystemParameters.ClientAreaAnimation && IsVisible && !cat.IsMouseCaptured && (menu == null || !menu.IsOpen); }
@@ -305,8 +339,15 @@ namespace Shiji.Desktop {
             if (!CanAnimate()) return;
             breath.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, 1.012, TimeSpan.FromSeconds(1.8)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } });
             idleOffset.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, -2, TimeSpan.FromSeconds(1.8)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } });
+            shadowBreath.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1, 0.94, TimeSpan.FromSeconds(1.8)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } });
+            groundShadow.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0.8, 0.7, TimeSpan.FromSeconds(1.8)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } });
         }
         private void StopMotion() {
+            shadowBreath.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            shadowJump.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            shadowJump.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+            groundShadow.BeginAnimation(UIElement.OpacityProperty, null);
+            shadowReaction.BeginAnimation(UIElement.OpacityProperty, null);
             breath.BeginAnimation(ScaleTransform.ScaleYProperty, null); idleOffset.BeginAnimation(TranslateTransform.YProperty, null);
             reactionOffset.BeginAnimation(TranslateTransform.YProperty, null); tilt.BeginAnimation(RotateTransform.AngleProperty, null);
         }
@@ -317,9 +358,19 @@ namespace Shiji.Desktop {
             animation.KeyFrames.Add(new SplineDoubleKeyFrame(-8, KeyTime.FromPercent(0.4), new KeySpline(0.2, 0.7, 0.4, 1)));
             animation.KeyFrames.Add(new SplineDoubleKeyFrame(0, KeyTime.FromPercent(1), new KeySpline(0.5, 0, 0.8, 0.5)));
             reactionOffset.BeginAnimation(TranslateTransform.YProperty, animation);
+            shadowJump.BeginAnimation(ScaleTransform.ScaleXProperty, ShadowBounce(1, 0.76));
+            shadowJump.BeginAnimation(ScaleTransform.ScaleYProperty, ShadowBounce(1, 0.82));
+            shadowReaction.BeginAnimation(UIElement.OpacityProperty, ShadowBounce(1, 0.58));
+        }
+        private static DoubleAnimationUsingKeyFrames ShadowBounce(double resting, double peak) {
+            var animation = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(460), FillBehavior = FillBehavior.Stop };
+            animation.KeyFrames.Add(new SplineDoubleKeyFrame(resting, KeyTime.FromPercent(0)));
+            animation.KeyFrames.Add(new SplineDoubleKeyFrame(peak, KeyTime.FromPercent(0.4), new KeySpline(0.2, 0.7, 0.4, 1)));
+            animation.KeyFrames.Add(new SplineDoubleKeyFrame(resting, KeyTime.FromPercent(1), new KeySpline(0.5, 0, 0.8, 0.5)));
+            return animation;
         }
         private void ClampPosition() { var area = SystemParameters.WorkArea; if (double.IsNaN(Left) || double.IsInfinity(Left)) Left = area.Right - Width; if (double.IsNaN(Top) || double.IsInfinity(Top)) Top = area.Bottom - Height; Left = Math.Max(area.Left, Math.Min(Left, area.Right - Width)); Top = Math.Max(area.Top, Math.Min(Top, area.Bottom - Height)); }
-        private void Save() { try { File.WriteAllText(Path.Combine(local, "pet.json"), json.Serialize(new { left = Left, top = Top, size = petSize, motion = motionEnabled }), new UTF8Encoding(false)); } catch { } }
+        private void Save() { try { File.WriteAllText(Path.Combine(local, "pet.json"), json.Serialize(new { left = Left, top = Top, size = petSize, sizeVersion = 1, motion = motionEnabled }), new UTF8Encoding(false)); } catch { } }
         private void ShowPet() { Show(); ClampPosition(); Activate(); }
         public void OpenPanel(string page) {
             menu.IsOpen = false; ShowPet();
@@ -333,6 +384,12 @@ namespace Shiji.Desktop {
         public async Task RunUiTest() {
             var checks = new List<string>();
             try {
+                if (ReadPetSize(new Dictionary<string, object> { { "size", 120 } }) != DefaultPetSize ||
+                    ReadPetSize(new Dictionary<string, object> { { "size", 120 }, { "sizeVersion", 1 } }) != 120 ||
+                    ReadPetSize(new Dictionary<string, object> { { "size", 96 } }) != 96 ||
+                    ReadPetSize(new Dictionary<string, object> { { "size", 160 } }) != 160 ||
+                    ReadPetSize(new Dictionary<string, object> { { "size", 999 } }) != DefaultPetSize)
+                    throw new Exception("Size upgrade or saved preference failed");
                 var originalSize = petSize;
                 SetSize(160); UpdateLayout();
                 if (Width < 184 || Height < 230 || cat.ActualWidth > Width) throw new Exception("Large skin is clipped");
@@ -343,19 +400,36 @@ namespace Shiji.Desktop {
                 var motionFrames = new List<object>();
                 for (int frame = 0; frame < 10; frame++) {
                     SaveVisual(this, Path.Combine(local, "pet-motion-" + frame.ToString("D2") + ".png"));
-                    motionFrames.Add(new { frame = frame, scaleY = breath.ScaleY, offsetY = idleOffset.Y });
+                    motionFrames.Add(new { frame = frame, scaleY = breath.ScaleY, offsetY = idleOffset.Y, shadowWidth = shadowBreath.ScaleX, shadowOpacity = groundShadow.Opacity });
                     await Task.Delay(160);
                 }
                 File.WriteAllText(Path.Combine(local, "pet-motion-test.json"), json.Serialize(new { systemAnimations = SystemParameters.ClientAreaAnimation, samples = motionFrames }), new UTF8Encoding(false));
                 Bounce(); await Task.Delay(120);
-                if (CanAnimate() && !reactionOffset.HasAnimatedProperties) throw new Exception("Click reaction did not start");
+                if (CanAnimate() && (!reactionOffset.HasAnimatedProperties || !shadowJump.HasAnimatedProperties || shadowJump.ScaleX >= 1 || shadowReaction.Opacity >= 1)) throw new Exception("Click reaction did not start");
+                SaveVisual(this, Path.Combine(local, "pet-bounce-preview.png"));
                 motionEnabled = false; StopMotion();
-                if (breath.HasAnimatedProperties || idleOffset.HasAnimatedProperties || reactionOffset.HasAnimatedProperties) throw new Exception("Motion toggle failed");
+                if (breath.HasAnimatedProperties || idleOffset.HasAnimatedProperties || reactionOffset.HasAnimatedProperties || shadowBreath.HasAnimatedProperties || shadowJump.HasAnimatedProperties || groundShadow.HasAnimatedProperties || shadowReaction.HasAnimatedProperties) throw new Exception("Motion toggle failed");
+                foreach (int pixels in new[] { 72, 96, 120, 150, 160, 180, 200, 240, 320 }) {
+                    var crisp = CrispSkin(pixels);
+                    if (crisp.PixelWidth != pixels || crisp.PixelHeight != pixels || !crisp.IsFrozen) throw new Exception("Crisp raster size failed");
+                    var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(crisp));
+                    using (var file = File.Create(Path.Combine(local, "pet-crisp-" + pixels + ".png"))) encoder.Save(file);
+                }
+                // Static depth remains visible with animations disabled, at every supported size.
+                foreach (int size in new[] { 72, 96, 120, 144, 160, 180 }) {
+                    SetSize(size); UpdateLayout();
+                    if (Canvas.GetTop(shadowReaction) + shadowReaction.ActualHeight > Height || shadowReaction.IsHitTestVisible || groundShadow.IsHitTestVisible) throw new Exception("Ground shadow layout or pointer handling failed");
+                    skinLighting.Visibility = Visibility.Collapsed; skinImage.Effect = null; shadowReaction.Visibility = Visibility.Collapsed;
+                    SaveVisual(this, Path.Combine(local, "pet-depth-before-" + size + ".png"));
+                    skinLighting.Visibility = Visibility.Visible; skinImage.Effect = null; shadowReaction.Visibility = Visibility.Visible;
+                    SaveVisual(this, Path.Combine(local, "pet-depth-after-" + size + ".png"));
+                }
+                SetSize((int)originalSize); UpdateLayout();
                 motionEnabled = true; StartMotion();
                 OpenMenu(); await Task.Delay(900);
                 if (breath.HasAnimatedProperties || idleOffset.HasAnimatedProperties) throw new Exception("Motion did not pause for menu");
-                if (!(cat is Image) || ((Image)cat).Source == null || !menu.IsOpen || menu.Items.Count != 4 || menu.ActualWidth > 210) throw new Exception("Compact menu failed");
-                checks.Add("dragon skin, 160px layout, idle and click motion, stop toggle and four-option menu pass");
+                if (skinImage == null || skinImage.Source == null || !menu.IsOpen || menu.Items.Count != 4 || menu.ActualWidth > 210) throw new Exception("Compact menu failed");
+                checks.Add("dragon skin, final-size sharp rasters, five presets and size upgrade, light and ground shadow, synchronized idle and bounce, stop toggle and four-option menu pass");
                 string[] destinations = { "reminder", "notes", "tasks" };
                 for (int i = 0; i < destinations.Length; i++) {
                     ((MenuItem)menu.Items[i]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
@@ -386,16 +460,68 @@ namespace Shiji.Desktop {
             try { await client.Call("/desktop/shutdown", "POST", new { }); ExitPet(); } catch (Exception e) { ShowError("未能停止后台：" + e.Message); }
         }
         private void ExitPet() { menu.IsOpen = false; Save(); SystemParameters.StaticPropertyChanged -= WorkAreaChanged; if (panel != null) panel.Close(); allowClose = true; Close(); Application.Current.Shutdown(); }
-        private static FrameworkElement CreatePetVisual() {
+        private void UpdateSkinRaster() {
+            if (originalSkin == null || skinImage == null) return;
+            var source = PresentationSource.FromVisual(this);
+            var dpiScale = source == null || source.CompositionTarget == null ? 1 : source.CompositionTarget.TransformToDevice.M11;
+            skinImage.Source = CrispSkin((int)Math.Round(petSize * dpiScale));
+        }
+        private BitmapSource crispAtlas;
+        private BitmapSource CrispSkin(int pixels) {
+            pixels = Math.Max(48, Math.Min(1024, pixels));
+            BitmapSource cached; if (crispSkinCache.TryGetValue(pixels, out cached)) return cached;
+            if (crispAtlas == null) {
+                var atlas = new BitmapImage();
+                using (var stream = typeof(PetWindow).Assembly.GetManifestResourceStream("Shiji.Desktop.DragonGirl.Crisp.png")) {
+                    if (stream == null) throw new InvalidOperationException("清晰皮肤资源缺失，请重新下载完整程序。");
+                    atlas.BeginInit(); atlas.CacheOption = BitmapCacheOption.OnLoad; atlas.StreamSource = stream; atlas.EndInit();
+                }
+                atlas.Freeze(); crispAtlas = atlas;
+            }
+            int[] sizes = { 72,90,96,108,120,126,144,150,160,162,168,180,192,200,210,216,240,252,270,280,288,300,320,336,360,384,400,420,480,560,640 };
+            int chosen = sizes.FirstOrDefault(size => size >= pixels); if (chosen == 0) chosen = sizes[sizes.Length - 1];
+            int x = 0, y = 0, row = 0;
+            foreach (int size in sizes) {
+                if (x + size > crispAtlas.PixelWidth) { x = 0; y += row; row = 0; }
+                if (size == chosen) break;
+                x += size; row = Math.Max(row, size);
+            }
+            BitmapSource result = new CroppedBitmap(crispAtlas, new Int32Rect(x, y, chosen, chosen)); result.Freeze();
+            if (chosen != pixels) { result = new TransformedBitmap(result, new ScaleTransform((double)pixels / chosen, (double)pixels / chosen)); result.Freeze(); }
+            crispSkinCache[pixels] = result; return result;
+        }
+        private static System.Windows.Media.Effects.DropShadowEffect CreateContactEffect() {
+            return new System.Windows.Media.Effects.DropShadowEffect { Color = Color.FromRgb(76, 51, 102), BlurRadius = 4, ShadowDepth = 1.5, Direction = 300, Opacity = 0.19, RenderingBias = System.Windows.Media.Effects.RenderingBias.Quality };
+        }
+        private FrameworkElement CreatePetVisual() {
             var bitmap = new BitmapImage();
             using (var stream = typeof(PetWindow).Assembly.GetManifestResourceStream("Shiji.Desktop.DragonGirl.png")) {
                 if (stream == null) throw new InvalidOperationException("桌宠皮肤缺失，请重新下载完整程序。");
                 bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.StreamSource = stream; bitmap.EndInit();
             }
-            bitmap.Freeze();
+            bitmap.Freeze(); originalSkin = bitmap;
             var visual = new Image { Source = bitmap, Stretch = Stretch.Uniform, SnapsToDevicePixels = true };
             RenderOptions.SetBitmapScalingMode(visual, BitmapScalingMode.HighQuality);
-            return visual;
+            skinImage = visual;
+            var lighting = new System.Windows.Shapes.Rectangle {
+                IsHitTestVisible = false,
+                Fill = new LinearGradientBrush {
+                    StartPoint = new Point(0, 0), EndPoint = new Point(0.9, 1),
+                    GradientStops = new GradientStopCollection {
+                        new GradientStop(Color.FromArgb(10, 255, 250, 244), 0),
+                        new GradientStop(Color.FromArgb(0, 255, 255, 255), 0.34),
+                        new GradientStop(Color.FromArgb(7, 107, 76, 148), 0.62),
+                        new GradientStop(Color.FromArgb(14, 80, 54, 116), 1)
+                    }
+                },
+                OpacityMask = new ImageBrush(bitmap) { Stretch = Stretch.Uniform }
+            };
+            skinLighting = lighting;
+            var layers = new Grid { Background = Brushes.Transparent };
+            // Keep the crisp foreground out of the shadow effect's offscreen surface.
+            var silhouette = new Image { Source = bitmap, Stretch = Stretch.Uniform, IsHitTestVisible = false, Effect = CreateContactEffect() };
+            layers.Children.Add(silhouette); layers.Children.Add(visual); layers.Children.Add(lighting);
+            return layers;
         }
     }
 
