@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -196,6 +196,10 @@ namespace Shiji.Desktop {
         private readonly ScaleTransform shadowJump = new ScaleTransform(1, 1);
         private PanelWindow panel;
         private readonly ContextMenu menu;
+        private readonly ContextMenu trayMenu;
+        private readonly System.Drawing.Icon trayIcon;
+        private MenuItem trayShow, trayHide, trayMotion, trayExit;
+        private readonly Dictionary<int, Button> sizeButtons = new Dictionary<int, Button>();
         private Point down, initial;
         private bool dragging, allowClose;
         private const int DefaultPetSize = 144;
@@ -254,42 +258,96 @@ namespace Shiji.Desktop {
                 if (dragging) { Left = initial.X + delta.X; Top = initial.Y + delta.Y; }
             };
             cat.MouseLeftButtonUp += (sender, e) => { if (!cat.IsMouseCaptured) return; cat.ReleaseMouseCapture(); ClampPosition(); Save(); StartMotion(); if (!dragging) { Bounce(); Say("右键我，可以提醒、记事和看任务"); } e.Handled = true; };
-            menu = (ContextMenu)XamlReader.Parse(@"<ContextMenu xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' Width='204' Padding='6' Background='#FCFAFF' Foreground='#343044' BorderBrush='#EAE5F4' BorderThickness='1' FontFamily='Microsoft YaHei UI' FontSize='13' HasDropShadow='False'>
-<ContextMenu.Template><ControlTemplate TargetType='ContextMenu'><Border Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' CornerRadius='14' Padding='{TemplateBinding Padding}'><StackPanel IsItemsHost='True' KeyboardNavigation.DirectionalNavigation='Cycle'/></Border></ControlTemplate></ContextMenu.Template>
-<ContextMenu.Resources><Style TargetType='MenuItem'><Setter Property='Padding' Value='10,9'/><Setter Property='Margin' Value='0,1'/><Setter Property='Cursor' Value='Hand'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='MenuItem'><Border x:Name='Row' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' CornerRadius='9' Background='Transparent' Padding='{TemplateBinding Padding}'><ContentPresenter ContentSource='Header'/></Border><ControlTemplate.Triggers><Trigger Property='IsHighlighted' Value='True'><Setter TargetName='Row' Property='Background' Value='#EDE5FA'/><Setter Property='Foreground' Value='#7660C9'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style></ContextMenu.Resources></ContextMenu>");
+            menu = CreateRoundedMenu(204);
             AddMenu("◷", "定时提醒", () => OpenPanel("reminder"));
             AddMenu("✎", "备忘录", () => OpenPanel("notes"));
             AddMenu("☷", "任务表", () => OpenPanel("tasks"));
             AddMenu("↗", "打开完整网页", () => client.OpenBrowser());
             cat.ContextMenu = menu;
             menu.Opened += (sender, e) => { StopMotion(); RecordVisual(); }; menu.Closed += (sender, e) => StartMotion();
-            tray = new Forms.NotifyIcon { Text = "拾记 · 右键桌宠记录日常", Icon = System.Drawing.SystemIcons.Information, Visible = true };
-            var trayMenu = new Forms.ContextMenuStrip();
-            trayMenu.Items.Add("显示桌宠", null, (sender, e) => Dispatcher.Invoke(new Action(ShowPet)));
-            trayMenu.Items.Add("定时提醒", null, (sender, e) => Dispatcher.Invoke(new Action(() => OpenPanel("reminder"))));
-            trayMenu.Items.Add("备忘录", null, (sender, e) => Dispatcher.Invoke(new Action(() => OpenPanel("notes"))));
-            trayMenu.Items.Add("任务表", null, (sender, e) => Dispatcher.Invoke(new Action(() => OpenPanel("tasks"))));
-            trayMenu.Items.Add("打开完整网页", null, (sender, e) => client.OpenBrowser());
-            trayMenu.Items.Add(new Forms.ToolStripSeparator());
-            var sizeMenu = new Forms.ToolStripMenuItem("桌宠大小");
-            foreach (var size in new[] { 72, 96, 120, 144, 160 }) { int chosen = size; sizeMenu.DropDownItems.Add((size == 72 ? "迷你" : size == 96 ? "小" : size == 120 ? "紧凑" : size == 144 ? "标准（默认）" : "清晰大图") + " · " + size + " px", null, (sender, e) => Dispatcher.Invoke(new Action(() => SetSize(chosen)))); }
-            trayMenu.Items.Add(sizeMenu);
-            var motionItem = new Forms.ToolStripMenuItem("启用轻动作") { Checked = motionEnabled, CheckOnClick = true };
-            motionItem.Click += (sender, e) => Dispatcher.Invoke(new Action(() => { motionEnabled = motionItem.Checked; Save(); if (motionEnabled) StartMotion(); else StopMotion(); }));
-            trayMenu.Items.Add(motionItem);
-            trayMenu.Items.Add("收起到托盘（提醒继续）", null, (sender, e) => Dispatcher.Invoke(new Action(() => { menu.IsOpen = false; Hide(); })));
-            trayMenu.Items.Add("退出拾记（停止提醒）", null, (sender, e) => Dispatcher.Invoke(new Action(async () => await ExitAll())));
-            tray.ContextMenuStrip = trayMenu; tray.DoubleClick += (sender, e) => Dispatcher.Invoke(new Action(OpenMenu));
+            using (var stream = typeof(PetWindow).Assembly.GetManifestResourceStream("Shiji.Desktop.Icon.ico")) {
+                if (stream == null) throw new InvalidOperationException("拾记图标缺失，请重新下载完整程序。");
+                using (var icon = new System.Drawing.Icon(stream)) trayIcon = (System.Drawing.Icon)icon.Clone();
+            }
+            Icon = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(trayIcon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+            tray = new Forms.NotifyIcon { Text = "拾记 · 点击打开菜单", Icon = trayIcon, Visible = true };
+            trayMenu = CreateRoundedMenu(236);
+            var heading = new MenuItem { Header = "拾记 · 个人助手", IsEnabled = false, FontSize = 12, Foreground = Theme.Muted };
+            trayMenu.Items.Add(heading);
+            trayShow = AddTrayItem("☀", "显示桌宠", ShowPet);
+            trayHide = AddTrayItem("☾", "隐藏桌宠（提醒继续）", HidePet);
+            AddTraySeparator();
+            AddTrayItem("◷", "定时提醒", () => OpenPanel("reminder"));
+            AddTrayItem("✎", "备忘录", () => OpenPanel("notes"));
+            AddTrayItem("☷", "任务表", () => OpenPanel("tasks"));
+            AddTrayItem("↗", "打开完整网页", () => client.OpenBrowser());
+            AddTraySeparator();
+            trayMenu.Items.Add(new MenuItem { Header = "桌宠大小", IsEnabled = false, FontSize = 12, Foreground = Theme.Muted });
+            var sizeRow = new StackPanel { Orientation = Orientation.Horizontal };
+            foreach (int size in new[] { 72, 96, 120, 144, 160 }) {
+                int chosen = size;
+                var button = Theme.Button(size.ToString(), () => { SetSize(chosen); RefreshTrayMenu(); trayMenu.IsOpen = false; });
+                button.Width = 37; button.MinHeight = 30; button.Padding = new Thickness(0); button.Margin = new Thickness(0, 0, 4, 0); button.FontSize = 12;
+                button.ToolTip = size == 144 ? "标准（默认） · 144 px" : size + " px";
+                sizeButtons[size] = button; sizeRow.Children.Add(button);
+            }
+            trayMenu.Items.Add(new MenuItem { Header = sizeRow, StaysOpenOnClick = true, Padding = new Thickness(7, 3, 3, 6) });
+            trayMotion = AddTrayItem("≈", "", () => { motionEnabled = !motionEnabled; Save(); if (motionEnabled) StartMotion(); else StopMotion(); });
+            AddTraySeparator();
+            trayExit = AddTrayItem("⏻", "退出拾记（停止提醒）", async () => await ExitAll());
+            trayExit.Foreground = Theme.Brush("#A75073");
+            trayMenu.Opened += (sender, e) => { StopMotion(); RefreshTrayMenu(); };
+            trayMenu.Closed += (sender, e) => StartMotion();
+            tray.MouseUp += (sender, e) => { if (e.Button == Forms.MouseButtons.Left || e.Button == Forms.MouseButtons.Right) Dispatcher.Invoke(new Action(OpenTrayMenu)); };
             showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\Shiji.Pet.Show." + identity);
             stopSignal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\Shiji.Pet.Stop." + identity);
             signals = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
             signals.Tick += (sender, e) => { if (showSignal.WaitOne(0)) OpenMenu(); if (stopSignal.WaitOne(0)) ExitPet(); if (bubbleUntil != default(DateTime) && DateTime.UtcNow > bubbleUntil) { bubble.Visibility = Visibility.Collapsed; bubbleUntil = default(DateTime); } }; signals.Start();
             bubbleUntil = DateTime.UtcNow.AddSeconds(8);
-            Closing += (sender, e) => { if (!allowClose) { e.Cancel = true; Hide(); } };
-            Closed += (sender, e) => { signals.Stop(); StopMotion(); tray.Visible = false; tray.Dispose(); showSignal.Dispose(); stopSignal.Dispose(); client.Dispose(); };
+            Closing += (sender, e) => { if (!allowClose) { e.Cancel = true; HidePet(); } };
+            Closed += (sender, e) => { signals.Stop(); StopMotion(); tray.Visible = false; tray.Dispose(); trayIcon.Dispose(); showSignal.Dispose(); stopSignal.Dispose(); client.Dispose(); };
             SystemParameters.StaticPropertyChanged += WorkAreaChanged;
             Loaded += (sender, e) => { UpdateSkinRaster(); ClampPosition(); StartMotion(); };
             IsVisibleChanged += (sender, e) => { if (IsVisible) StartMotion(); else StopMotion(); };
+        }
+        private static ContextMenu CreateRoundedMenu(int width) {
+            return (ContextMenu)XamlReader.Parse(@"<ContextMenu xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' Width='" + width + @"' Padding='6' Background='#FCFAFF' Foreground='#343044' BorderBrush='#EAE5F4' BorderThickness='1' FontFamily='Microsoft YaHei UI' FontSize='13' HasDropShadow='False'>
+<ContextMenu.Template><ControlTemplate TargetType='ContextMenu'><Border Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' CornerRadius='14' Padding='{TemplateBinding Padding}'><StackPanel IsItemsHost='True' KeyboardNavigation.DirectionalNavigation='Cycle'/></Border></ControlTemplate></ContextMenu.Template>
+<ContextMenu.Resources><Style TargetType='MenuItem'><Setter Property='Padding' Value='10,9'/><Setter Property='Margin' Value='0,1'/><Setter Property='Cursor' Value='Hand'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='MenuItem'><Border x:Name='Row' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' CornerRadius='9' Background='Transparent' Padding='{TemplateBinding Padding}'><ContentPresenter ContentSource='Header'/></Border><ControlTemplate.Triggers><Trigger Property='IsHighlighted' Value='True'><Setter TargetName='Row' Property='Background' Value='#EDE5FA'/><Setter Property='Foreground' Value='#7660C9'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style></ContextMenu.Resources></ContextMenu>");
+        }
+        private static StackPanel TrayLabel(string glyph, string label) {
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            var icon = Theme.Text(glyph, 16, Theme.Purple); icon.Width = 27; icon.Margin = new Thickness(0); row.Children.Add(icon);
+            var text = Theme.Text(label, 13); text.Margin = new Thickness(0); text.VerticalAlignment = VerticalAlignment.Center; row.Children.Add(text);
+            return row;
+        }
+        private MenuItem AddTrayItem(string glyph, string label, Action action) {
+            var item = new MenuItem { Header = TrayLabel(glyph, label) };
+            AutomationProperties.SetName(item, label);
+            item.Click += (sender, e) => { trayMenu.IsOpen = false; action(); };
+            trayMenu.Items.Add(item); return item;
+        }
+        private void AddTraySeparator() {
+            trayMenu.Items.Add(new Separator { Margin = new Thickness(9, 3, 9, 3), Background = Theme.Line, Height = 1 });
+        }
+        private void RefreshTrayMenu() {
+            trayShow.IsEnabled = !IsVisible; trayHide.IsEnabled = IsVisible;
+            trayShow.Opacity = trayShow.IsEnabled ? 1 : 0.45; trayHide.Opacity = trayHide.IsEnabled ? 1 : 0.45;
+            string label = "轻动作 · " + (motionEnabled ? "已开启" : "已关闭");
+            trayMotion.Header = TrayLabel("≈", label); AutomationProperties.SetName(trayMotion, label);
+            foreach (var pair in sizeButtons) {
+                pair.Value.Background = pair.Key == (int)petSize ? Theme.Purple : Theme.Brush("#F2EDF9");
+                pair.Value.Foreground = pair.Key == (int)petSize ? Brushes.White : Theme.Purple;
+            }
+        }
+        private void OpenTrayMenu() {
+            menu.IsOpen = false; RefreshTrayMenu();
+            trayMenu.PlacementTarget = null; trayMenu.Placement = PlacementMode.MousePoint; trayMenu.IsOpen = true;
+        }
+        private void HidePet() {
+            menu.IsOpen = false; trayMenu.IsOpen = false;
+            if (panel != null) panel.Close();
+            Hide();
         }
         private void WorkAreaChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e) { if (e.PropertyName == "WorkArea") ClampPosition(); }
         private void AddMenu(string icon, string label, Action action) {
@@ -334,7 +392,7 @@ namespace Shiji.Desktop {
             return size == 72 || size == 96 || size == 120 || size == 144 || size == 160 ? (int)size : DefaultPetSize;
         }
         private void SetSize(int size) { petSize = size; ApplySize(); ClampPosition(); Save(); }
-        private bool CanAnimate() { return motionEnabled && SystemParameters.ClientAreaAnimation && IsVisible && !cat.IsMouseCaptured && (menu == null || !menu.IsOpen); }
+        private bool CanAnimate() { return motionEnabled && SystemParameters.ClientAreaAnimation && IsVisible && !cat.IsMouseCaptured && (menu == null || !menu.IsOpen) && (trayMenu == null || !trayMenu.IsOpen); }
         private void StartMotion() {
             if (!CanAnimate()) return;
             breath.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, 1.012, TimeSpan.FromSeconds(1.8)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } });
@@ -449,6 +507,23 @@ namespace Shiji.Desktop {
                 panel.Close(); OpenMenu(); await Task.Delay(200); menu.IsOpen = false;
                 if (menu.IsOpen || panel != null) throw new Exception("Dismissal failed");
                 checks.Add("menu and operation window dismiss without stopping backend");
+                OpenTrayMenu(); await Task.Delay(250);
+                if (!trayMenu.IsOpen || trayMenu.ActualWidth > 240 || trayIcon == null || Icon == null || sizeButtons.Count != 5 || !trayHide.IsEnabled) throw new Exception("Tray menu or icon failed");
+                SaveVisual(trayMenu, Path.Combine(local, "pet-tray-menu-preview.png"));
+                foreach (int selectedSize in new[] { 72, 96, 120, 144, 160, 160 }) {
+                    if (!trayMenu.IsOpen) { OpenTrayMenu(); await Task.Delay(100); }
+                    sizeButtons[selectedSize].RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(100);
+                    if (petSize != selectedSize || trayMenu.IsOpen) throw new Exception("Tray size selection did not apply and dismiss: " + selectedSize);
+                }
+                SetSize((int)originalSize); OpenTrayMenu(); await Task.Delay(150);
+                trayHide.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); await Task.Delay(150);
+                if (IsVisible || trayMenu.IsOpen) throw new Exception("Hide tray action failed");
+                if (AssistantClient.Text(await client.Call("/desktop/status"), "application") != "shiji") throw new Exception("Hide stopped the background service");
+                OpenTrayMenu(); await Task.Delay(200);
+                if (!trayMenu.IsOpen || !trayShow.IsEnabled || trayHide.IsEnabled) throw new Exception("Hidden tray menu failed");
+                trayShow.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); await Task.Delay(150);
+                if (!IsVisible) throw new Exception("Show tray action failed");
+                checks.Add("rounded tray menu, custom icon, five size choices dismiss menu including repeated selection, and hide/show preserve backend");
                 File.WriteAllText(Path.Combine(local, "pet-ui-test.json"), json.Serialize(new { passed = checks.Count, checks = checks }), new UTF8Encoding(false));
             } catch (Exception e) { File.WriteAllText(Path.Combine(local, "pet-ui-error.log"), e.ToString()); }
             finally { ExitPet(); }
@@ -459,7 +534,7 @@ namespace Shiji.Desktop {
             if (MessageBox.Show("退出后拾记后台将停止，到点不会发送提醒。确定退出？", "退出拾记", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
             try { await client.Call("/desktop/shutdown", "POST", new { }); ExitPet(); } catch (Exception e) { ShowError("未能停止后台：" + e.Message); }
         }
-        private void ExitPet() { menu.IsOpen = false; Save(); SystemParameters.StaticPropertyChanged -= WorkAreaChanged; if (panel != null) panel.Close(); allowClose = true; Close(); Application.Current.Shutdown(); }
+        private void ExitPet() { trayMenu.IsOpen = false; menu.IsOpen = false; Save(); SystemParameters.StaticPropertyChanged -= WorkAreaChanged; if (panel != null) panel.Close(); allowClose = true; Close(); Application.Current.Shutdown(); }
         private void UpdateSkinRaster() {
             if (originalSkin == null || skinImage == null) return;
             var source = PresentationSource.FromVisual(this);

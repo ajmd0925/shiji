@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Archive, [switch]$BrowserChecks, [switch]$PetChecks)
+﻿param([Parameter(Mandatory=$true)][string]$Archive, [switch]$BrowserChecks, [switch]$PetChecks)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $archivePath = (Resolve-Path -LiteralPath $Archive).Path
@@ -117,7 +117,7 @@ try {
         $uiError = Join-Path $install '.local/pet-ui-error.log'
         if (Test-Path -LiteralPath $uiError) { throw ('Native UI route test failed: ' + [IO.File]::ReadAllText($uiError)) }
         $uiResult = Get-Content -LiteralPath (Join-Path $install '.local/pet-ui-test.json') -Raw | ConvertFrom-Json
-        Assert-Portable ($uiTest.ExitCode -eq 0 -and $uiResult.passed -eq 8) 'compact menu routes, operation windows and dismissal pass native UI checks'
+        Assert-Portable ($uiTest.ExitCode -eq 0 -and $uiResult.passed -eq 9) 'compact menu routes, operation windows and dismissal pass native UI checks'
         $uiResult.checks | ForEach-Object { Write-Host ('UI CHECK: ' + $_) }
         $null = Run-Launcher 'start-desktop.ps1' @('-SkipNotificationSetup')
         $instanceHash = [Security.Cryptography.SHA256]::Create()

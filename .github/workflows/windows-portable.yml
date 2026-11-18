@@ -30,7 +30,7 @@ jobs:
       - name: Build and test portable app
         shell: pwsh
         run: |
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME -replace '^v','' } else { "0.3.8-ci.$env:GITHUB_RUN_NUMBER" }
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME -replace '^v','' } else { "0.3.9-ci.$env:GITHUB_RUN_NUMBER" }
           ./scripts/package-windows.ps1 -Version $version -DownloadRuntime
           $archive = (Get-ChildItem release/shiji-*-windows-x64.zip).FullName
           ./scripts/test-portable.ps1 -Archive $archive -BrowserChecks -PetChecks
