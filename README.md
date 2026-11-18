@@ -23,7 +23,7 @@ cd shiji
 
 ## 安装与启动
 
-普通使用者可从仓库 [Releases 下载页](https://github.com/ajmd0925/shiji/releases) 下载 `shiji-版本-windows-x64.zip`，完整解压后双击 `Start.cmd`。便携版自带 Java 和编译后的页面，首次自动连接、注册本机通知并显示桌宠，点击小猫即可添加提醒、备忘录和任务，无需安装开发工具或 MySQL。桌宠默认 96 个逻辑像素，可选 72/96/120 三档，支持拖动和收起到托盘；`OpenBrowser.cmd` 打开保留原样的完整网页。`Check.cmd` 检查环境，`Stop.cmd` 正常停止。默认使用 H2 本地文件数据库，MySQL 为可选配置；两种模式的数据独立。详情见 [下载版使用说明](docs/distribution.md)。源码 ZIP 不能直接双击运行。
+普通使用者可从仓库 [Releases 下载页](https://github.com/ajmd0925/shiji/releases) 下载 `shiji-版本-windows-x64.zip`，完整解压后双击 `Start.cmd`。便携版自带 Java 和编译后的页面，首次自动连接、注册本机通知并显示桌宠，右键桌宠打开白紫色四项小菜单，可选择定时提醒、备忘录、任务表或完整网页，无需安装开发工具或 MySQL。桌宠默认 120 个逻辑像素，可选 72/96/120/160 四档，支持拖动和收起到托盘；`OpenBrowser.cmd` 打开保留原样的完整网页。`Check.cmd` 检查环境，`Stop.cmd` 正常停止。默认使用 H2 本地文件数据库，MySQL 为可选配置；两种模式的数据独立。详情见 [下载版使用说明](docs/distribution.md)。源码 ZIP 不能直接双击运行。
 
 以下为源码开发方式：
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -15,9 +15,11 @@ using System.Web.Script.Serialization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Markup;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Forms = System.Windows.Forms;
@@ -50,6 +52,10 @@ namespace Shiji.Desktop {
                     var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
                     var pet = new PetWindow(client, root, identity);
                     app.DispatcherUnhandledException += (sender, e) => { e.Handled = true; pet.ShowError("操作未完成，请重试。" + e.Exception.Message); };
+                    if (args.Contains("--ui-test")) {
+                        if (!File.Exists(Path.Combine(root, ".local", "pet-test-mode"))) throw new InvalidOperationException("UI test requires an isolated installation.");
+                        pet.Loaded += async (sender, e) => await pet.RunUiTest();
+                    }
                     app.Run(pet);
                     return 0;
                 } catch (Exception e) {
@@ -161,12 +167,12 @@ namespace Shiji.Desktop {
         public static readonly Brush Ink = Brush("#343044"), Muted = Brush("#8C859E"), Purple = Brush("#7660C9"), Line = Brush("#EAE5F4");
         public static TextBlock Text(string value, double size = 14, Brush color = null) { return new TextBlock { Text = value, FontSize = size, Foreground = color ?? Ink, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) }; }
         public static Button Button(string value, Action action, bool primary = false) {
-            var button = new Button { Content = value, MinHeight = 38, Padding = new Thickness(14, 7, 14, 7), Margin = new Thickness(0, 0, 0, 8), Background = primary ? Purple : Brush("#F2EDF9"), Foreground = primary ? Brushes.White : Ink, BorderThickness = new Thickness(0), Cursor = Cursors.Hand, HorizontalContentAlignment = HorizontalAlignment.Center };
+            var button = new Button { Content = value, MinHeight = 32, Padding = new Thickness(10, 5, 10, 5), Margin = new Thickness(0, 0, 0, 8), Background = primary ? Purple : Brush("#F2EDF9"), Foreground = primary ? Brushes.White : Ink, BorderThickness = new Thickness(0), Cursor = Cursors.Hand, HorizontalContentAlignment = HorizontalAlignment.Center };
             button.Template = (ControlTemplate)XamlReader.Parse("<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Button'><Border Background='{TemplateBinding Background}' CornerRadius='12' Padding='{TemplateBinding Padding}'><ContentPresenter HorizontalAlignment='{TemplateBinding HorizontalContentAlignment}' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter Property='Opacity' Value='0.82'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></ControlTemplate.Triggers></ControlTemplate>");
             button.Click += (sender, e) => action(); return button;
         }
         public static TextBox Input(string id, int maxLength, bool multiline = false) {
-            var input = new TextBox { MaxLength = maxLength, FontSize = 14, Foreground = Ink, Background = Brushes.White, BorderBrush = Line, BorderThickness = new Thickness(1), Padding = new Thickness(10), Margin = new Thickness(0, 0, 0, 14), MinHeight = multiline ? 130 : 40, AcceptsReturn = multiline, TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap, VerticalScrollBarVisibility = multiline ? ScrollBarVisibility.Auto : ScrollBarVisibility.Hidden };
+            var input = new TextBox { MaxLength = maxLength, FontSize = 14, Foreground = Ink, Background = Brushes.White, BorderBrush = Line, BorderThickness = new Thickness(1), Padding = new Thickness(8), Margin = new Thickness(0, 0, 0, 10), MinHeight = multiline ? 100 : 34, AcceptsReturn = multiline, TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap, VerticalScrollBarVisibility = multiline ? ScrollBarVisibility.Auto : ScrollBarVisibility.Hidden };
             AutomationProperties.SetAutomationId(input, id); return input;
         }
     }
@@ -176,15 +182,20 @@ namespace Shiji.Desktop {
         private readonly string local;
         private readonly EventWaitHandle showSignal, stopSignal;
         private readonly DispatcherTimer signals;
-        private readonly DispatcherTimer blink;
         private readonly Forms.NotifyIcon tray;
         private readonly Border bubble;
         private readonly FrameworkElement cat;
         private readonly TextBlock bubbleText;
         private PanelWindow panel;
+        private readonly ContextMenu menu;
         private Point down, initial;
         private bool dragging, allowClose;
-        private double petSize = 96;
+        private double petSize = 120;
+        private bool motionEnabled = true;
+        private readonly ScaleTransform breath = new ScaleTransform(1, 1);
+        private readonly TranslateTransform idleOffset = new TranslateTransform();
+        private readonly TranslateTransform reactionOffset = new TranslateTransform();
+        private readonly RotateTransform tilt = new RotateTransform();
         private DateTime bubbleUntil;
         private readonly JavaScriptSerializer json = new JavaScriptSerializer();
         public PetWindow(AssistantClient client, string root, string identity) {
@@ -194,19 +205,25 @@ namespace Shiji.Desktop {
             try {
                 var saved = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(Path.Combine(local, "pet.json")));
                 petSize = Convert.ToDouble(saved["size"], CultureInfo.InvariantCulture);
-                if (petSize != 72 && petSize != 96 && petSize != 120) petSize = 96;
+                if (petSize != 72 && petSize != 96 && petSize != 120 && petSize != 160) petSize = 120;
+                object savedMotion; if (saved.TryGetValue("motion", out savedMotion) && savedMotion is bool) motionEnabled = (bool)savedMotion;
                 Left = Convert.ToDouble(saved["left"], CultureInfo.InvariantCulture); Top = Convert.ToDouble(saved["top"], CultureInfo.InvariantCulture);
                 if (!double.IsNaN(Left) && !double.IsInfinity(Left)) ClampPosition(); else { Left = area.Right - Width; Top = area.Bottom - Height; }
             } catch { }
             var canvas = new Canvas(); Content = canvas;
-            bubbleText = Theme.Text("点我，记下小事", 12, Theme.Purple); bubbleText.Margin = new Thickness(0);
+            bubbleText = Theme.Text("右键我，记下小事", 12, Theme.Purple); bubbleText.Margin = new Thickness(0);
             bubble = new Border { Background = Theme.Brush("#FCFAFF"), BorderBrush = Theme.Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(13), Padding = new Thickness(10, 7, 10, 7), Width = 144, Child = bubbleText, IsHitTestVisible = false };
             Canvas.SetTop(bubble, 0); Canvas.SetLeft(bubble, 2); canvas.Children.Add(bubble);
-            cat = (FrameworkElement)XamlReader.Parse(CatXaml); cat.Width = petSize; cat.Height = petSize; cat.Cursor = Cursors.Hand; cat.ToolTip = "点击打开拾记 · 按住拖动 · 右键更多";
-            AutomationProperties.SetName(cat, "拾记小猫，点击打开菜单，按住拖动"); AutomationProperties.SetAutomationId(cat, "ShijiPet");
-            cat.Focusable = true; cat.KeyDown += (sender, e) => { if (e.Key == Key.Enter || e.Key == Key.Space) OpenPanel("home"); };
-            Canvas.SetTop(cat, 50); Canvas.SetLeft(cat, (Width - petSize) / 2); canvas.Children.Add(cat);
-            cat.MouseLeftButtonDown += (sender, e) => { down = PointToScreen(e.GetPosition(this)); initial = new Point(Left, Top); dragging = false; cat.CaptureMouse(); e.Handled = true; };
+            cat = CreatePetVisual();
+            var transforms = new TransformGroup(); transforms.Children.Add(breath); transforms.Children.Add(tilt); transforms.Children.Add(idleOffset); transforms.Children.Add(reactionOffset);
+            cat.RenderTransform = transforms; cat.RenderTransformOrigin = new Point(0.5, 0.9);
+            cat.MouseEnter += (sender, e) => { if (CanAnimate()) tilt.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(tilt.Angle, -1.5, TimeSpan.FromMilliseconds(180))); };
+            cat.MouseLeave += (sender, e) => tilt.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(tilt.Angle, 0, TimeSpan.FromMilliseconds(180)));
+            cat.Width = petSize; cat.Height = petSize; cat.Cursor = Cursors.Hand; cat.ToolTip = "右键打开拾记菜单 · 按住拖动";
+            AutomationProperties.SetName(cat, "拾记龙娘，右键打开菜单，按住拖动"); AutomationProperties.SetAutomationId(cat, "ShijiPet");
+            cat.Focusable = true; cat.KeyDown += (sender, e) => { if (e.Key == Key.Enter || e.Key == Key.Space || e.Key == Key.Apps) { OpenMenu(); e.Handled = true; } };
+            Canvas.SetTop(cat, 50); Canvas.SetLeft(cat, (Width - petSize) / 2); canvas.Children.Add(cat); ApplySize();
+            cat.MouseLeftButtonDown += (sender, e) => { down = PointToScreen(e.GetPosition(this)); initial = new Point(Left, Top); dragging = false; StopMotion(); cat.CaptureMouse(); e.Handled = true; };
             cat.MouseMove += (sender, e) => {
                 if (!cat.IsMouseCaptured || e.LeftButton != MouseButtonState.Pressed) return;
                 var position = PointToScreen(e.GetPosition(this)); var matrix = PresentationSource.FromVisual(this).CompositionTarget.TransformFromDevice;
@@ -214,82 +231,172 @@ namespace Shiji.Desktop {
                 if (Math.Abs(delta.X) + Math.Abs(delta.Y) > 5) dragging = true;
                 if (dragging) { Left = initial.X + delta.X; Top = initial.Y + delta.Y; }
             };
-            cat.MouseLeftButtonUp += (sender, e) => { if (!cat.IsMouseCaptured) return; cat.ReleaseMouseCapture(); ClampPosition(); Save(); if (!dragging) OpenPanel("home"); e.Handled = true; };
-            var menu = new ContextMenu();
-            AddMenu(menu, "添加提醒", () => OpenPanel("reminder")); AddMenu(menu, "写备忘录", () => OpenPanel("note")); AddMenu(menu, "添加任务", () => OpenPanel("task")); AddMenu(menu, "查看提醒", () => OpenPanel("reminders"));
-            menu.Items.Add(new Separator());
-            var sizeMenu = new MenuItem { Header = "桌宠大小" };
-            foreach (var size in new[] { 72, 96, 120 }) { int chosen = size; var item = new MenuItem { Header = (size == 72 ? "小" : size == 96 ? "中（默认）" : "大") + " · " + size + " px" }; item.Click += (sender, e) => SetSize(chosen); sizeMenu.Items.Add(item); }
-            menu.Items.Add(sizeMenu); AddMenu(menu, "打开完整网页", () => client.OpenBrowser()); AddMenu(menu, "收起到托盘（提醒继续）", () => Hide()); AddMenu(menu, "退出拾记（停止提醒）", async () => await ExitAll()); cat.ContextMenu = menu;
-            tray = new Forms.NotifyIcon { Text = "拾记 · 点击小猫记录日常", Icon = System.Drawing.SystemIcons.Information, Visible = true };
+            cat.MouseLeftButtonUp += (sender, e) => { if (!cat.IsMouseCaptured) return; cat.ReleaseMouseCapture(); ClampPosition(); Save(); StartMotion(); if (!dragging) { Bounce(); Say("右键我，可以提醒、记事和看任务"); } e.Handled = true; };
+            menu = (ContextMenu)XamlReader.Parse(@"<ContextMenu xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' Width='204' Padding='6' Background='#FCFAFF' Foreground='#343044' BorderBrush='#EAE5F4' BorderThickness='1' FontFamily='Microsoft YaHei UI' FontSize='13' HasDropShadow='False'>
+<ContextMenu.Template><ControlTemplate TargetType='ContextMenu'><Border Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' CornerRadius='14' Padding='{TemplateBinding Padding}'><StackPanel IsItemsHost='True' KeyboardNavigation.DirectionalNavigation='Cycle'/></Border></ControlTemplate></ContextMenu.Template>
+<ContextMenu.Resources><Style TargetType='MenuItem'><Setter Property='Padding' Value='10,9'/><Setter Property='Margin' Value='0,1'/><Setter Property='Cursor' Value='Hand'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='MenuItem'><Border x:Name='Row' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' CornerRadius='9' Background='Transparent' Padding='{TemplateBinding Padding}'><ContentPresenter ContentSource='Header'/></Border><ControlTemplate.Triggers><Trigger Property='IsHighlighted' Value='True'><Setter TargetName='Row' Property='Background' Value='#EDE5FA'/><Setter Property='Foreground' Value='#7660C9'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style></ContextMenu.Resources></ContextMenu>");
+            AddMenu("◷", "定时提醒", () => OpenPanel("reminder"));
+            AddMenu("✎", "备忘录", () => OpenPanel("notes"));
+            AddMenu("☷", "任务表", () => OpenPanel("tasks"));
+            AddMenu("↗", "打开完整网页", () => client.OpenBrowser());
+            cat.ContextMenu = menu;
+            menu.Opened += (sender, e) => { StopMotion(); RecordVisual(); }; menu.Closed += (sender, e) => StartMotion();
+            tray = new Forms.NotifyIcon { Text = "拾记 · 右键桌宠记录日常", Icon = System.Drawing.SystemIcons.Information, Visible = true };
             var trayMenu = new Forms.ContextMenuStrip();
             trayMenu.Items.Add("显示桌宠", null, (sender, e) => Dispatcher.Invoke(new Action(ShowPet)));
-            trayMenu.Items.Add("添加提醒", null, (sender, e) => Dispatcher.Invoke(new Action(() => OpenPanel("reminder"))));
-            trayMenu.Items.Add("写备忘录", null, (sender, e) => Dispatcher.Invoke(new Action(() => OpenPanel("note"))));
+            trayMenu.Items.Add("定时提醒", null, (sender, e) => Dispatcher.Invoke(new Action(() => OpenPanel("reminder"))));
+            trayMenu.Items.Add("备忘录", null, (sender, e) => Dispatcher.Invoke(new Action(() => OpenPanel("notes"))));
+            trayMenu.Items.Add("任务表", null, (sender, e) => Dispatcher.Invoke(new Action(() => OpenPanel("tasks"))));
             trayMenu.Items.Add("打开完整网页", null, (sender, e) => client.OpenBrowser());
+            trayMenu.Items.Add(new Forms.ToolStripSeparator());
+            var sizeMenu = new Forms.ToolStripMenuItem("桌宠大小");
+            foreach (var size in new[] { 72, 96, 120, 160 }) { int chosen = size; sizeMenu.DropDownItems.Add((size == 72 ? "迷你" : size == 96 ? "小" : size == 120 ? "标准（默认）" : "清晰大图") + " · " + size + " px", null, (sender, e) => Dispatcher.Invoke(new Action(() => SetSize(chosen)))); }
+            trayMenu.Items.Add(sizeMenu);
+            var motionItem = new Forms.ToolStripMenuItem("启用轻动作") { Checked = motionEnabled, CheckOnClick = true };
+            motionItem.Click += (sender, e) => Dispatcher.Invoke(new Action(() => { motionEnabled = motionItem.Checked; Save(); if (motionEnabled) StartMotion(); else StopMotion(); }));
+            trayMenu.Items.Add(motionItem);
+            trayMenu.Items.Add("收起到托盘（提醒继续）", null, (sender, e) => Dispatcher.Invoke(new Action(() => { menu.IsOpen = false; Hide(); })));
             trayMenu.Items.Add("退出拾记（停止提醒）", null, (sender, e) => Dispatcher.Invoke(new Action(async () => await ExitAll())));
-            tray.ContextMenuStrip = trayMenu; tray.DoubleClick += (sender, e) => Dispatcher.Invoke(new Action(() => OpenPanel("home")));
+            tray.ContextMenuStrip = trayMenu; tray.DoubleClick += (sender, e) => Dispatcher.Invoke(new Action(OpenMenu));
             showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\Shiji.Pet.Show." + identity);
             stopSignal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\Shiji.Pet.Stop." + identity);
             signals = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
-            signals.Tick += (sender, e) => { if (showSignal.WaitOne(0)) OpenPanel("home"); if (stopSignal.WaitOne(0)) ExitPet(); if (bubbleUntil != default(DateTime) && DateTime.UtcNow > bubbleUntil) { bubble.Visibility = Visibility.Collapsed; bubbleUntil = default(DateTime); } }; signals.Start();
+            signals.Tick += (sender, e) => { if (showSignal.WaitOne(0)) OpenMenu(); if (stopSignal.WaitOne(0)) ExitPet(); if (bubbleUntil != default(DateTime) && DateTime.UtcNow > bubbleUntil) { bubble.Visibility = Visibility.Collapsed; bubbleUntil = default(DateTime); } }; signals.Start();
             bubbleUntil = DateTime.UtcNow.AddSeconds(8);
-            blink = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-            blink.Tick += (sender, e) => { if (!IsVisible) return; var eyes = cat.FindName("Eyes") as FrameworkElement; if (eyes != null) { var animation = new DoubleAnimation(1, 0.12, TimeSpan.FromMilliseconds(95)) { AutoReverse = true }; ((ScaleTransform)eyes.RenderTransform).BeginAnimation(ScaleTransform.ScaleYProperty, animation); } }; blink.Start();
             Closing += (sender, e) => { if (!allowClose) { e.Cancel = true; Hide(); } };
-            Closed += (sender, e) => { signals.Stop(); blink.Stop(); tray.Visible = false; tray.Dispose(); showSignal.Dispose(); stopSignal.Dispose(); client.Dispose(); };
+            Closed += (sender, e) => { signals.Stop(); StopMotion(); tray.Visible = false; tray.Dispose(); showSignal.Dispose(); stopSignal.Dispose(); client.Dispose(); };
             SystemParameters.StaticPropertyChanged += WorkAreaChanged;
-            Loaded += (sender, e) => ClampPosition();
+            Loaded += (sender, e) => { ClampPosition(); StartMotion(); };
+            IsVisibleChanged += (sender, e) => { if (IsVisible) StartMotion(); else StopMotion(); };
         }
         private void WorkAreaChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e) { if (e.PropertyName == "WorkArea") ClampPosition(); }
-        private void AddMenu(ContextMenu menu, string label, Action action) { var item = new MenuItem { Header = label }; item.Click += (sender, e) => action(); menu.Items.Add(item); }
-        private void SetSize(int size) { petSize = size; cat.Width = size; cat.Height = size; Canvas.SetLeft(cat, (Width - size) / 2); Save(); }
+        private void AddMenu(string icon, string label, Action action) {
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            var glyph = Theme.Text(icon, 17, Theme.Purple); glyph.Width = 28; glyph.Margin = new Thickness(0); row.Children.Add(glyph);
+            var text = Theme.Text(label, 13); text.Margin = new Thickness(0); text.VerticalAlignment = VerticalAlignment.Center; row.Children.Add(text);
+            var item = new MenuItem { Header = row }; AutomationProperties.SetName(item, label); item.Click += (sender, e) => action(); menu.Items.Add(item);
+        }
+        public void OpenMenu() { ShowPet(); menu.PlacementTarget = cat; menu.Placement = PlacementMode.Top; menu.IsOpen = true; }
+        private void RecordVisual() {
+            if (!File.Exists(Path.Combine(local, "pet-test-mode"))) return;
+            var test = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+            test.Tick += (sender, e) => {
+                test.Stop();
+                var details = new { petVisible = IsVisible, menuVisible = menu.IsOpen, menuItems = menu.Items.Count, menuWidth = menu.ActualWidth, menuHeight = menu.ActualHeight, panelVisible = panel != null && panel.IsVisible, panelWidth = panel == null ? 0 : panel.ActualWidth, panelHeight = panel == null ? 0 : panel.ActualHeight, left = Left, top = Top, petSize = petSize, width = ActualWidth, height = ActualHeight };
+                File.WriteAllText(Path.Combine(local, "pet-window-test.json"), json.Serialize(details), new UTF8Encoding(false));
+                SaveVisual(this, Path.Combine(local, "pet-preview.png"));
+                if (menu.IsOpen) SaveVisual(menu, Path.Combine(local, "pet-menu-preview.png"));
+                if (panel != null && panel.IsVisible) panel.SavePreview(Path.Combine(local, "pet-panel-preview.png"));
+            }; test.Start();
+        }
+        private static void SaveVisual(FrameworkElement view, string path) {
+            var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(view.ActualWidth), (int)Math.Ceiling(view.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(view); var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+            using (var file = File.Create(path)) encoder.Save(file);
+        }
+        private void ApplySize() {
+            Width = Math.Max(148, petSize + 24); Height = 50 + petSize + 20;
+            cat.Width = petSize; cat.Height = petSize; Canvas.SetLeft(cat, (Width - petSize) / 2);
+            Canvas.SetLeft(bubble, (Width - bubble.Width) / 2);
+        }
+        private void SetSize(int size) { petSize = size; ApplySize(); ClampPosition(); Save(); }
+        private bool CanAnimate() { return motionEnabled && SystemParameters.ClientAreaAnimation && IsVisible && !cat.IsMouseCaptured && (menu == null || !menu.IsOpen); }
+        private void StartMotion() {
+            if (!CanAnimate()) return;
+            breath.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, 1.012, TimeSpan.FromSeconds(1.8)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } });
+            idleOffset.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, -2, TimeSpan.FromSeconds(1.8)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } });
+        }
+        private void StopMotion() {
+            breath.BeginAnimation(ScaleTransform.ScaleYProperty, null); idleOffset.BeginAnimation(TranslateTransform.YProperty, null);
+            reactionOffset.BeginAnimation(TranslateTransform.YProperty, null); tilt.BeginAnimation(RotateTransform.AngleProperty, null);
+        }
+        private void Bounce() {
+            if (!CanAnimate()) return;
+            var animation = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(460), FillBehavior = FillBehavior.Stop };
+            animation.KeyFrames.Add(new SplineDoubleKeyFrame(0, KeyTime.FromPercent(0)));
+            animation.KeyFrames.Add(new SplineDoubleKeyFrame(-8, KeyTime.FromPercent(0.4), new KeySpline(0.2, 0.7, 0.4, 1)));
+            animation.KeyFrames.Add(new SplineDoubleKeyFrame(0, KeyTime.FromPercent(1), new KeySpline(0.5, 0, 0.8, 0.5)));
+            reactionOffset.BeginAnimation(TranslateTransform.YProperty, animation);
+        }
         private void ClampPosition() { var area = SystemParameters.WorkArea; if (double.IsNaN(Left) || double.IsInfinity(Left)) Left = area.Right - Width; if (double.IsNaN(Top) || double.IsInfinity(Top)) Top = area.Bottom - Height; Left = Math.Max(area.Left, Math.Min(Left, area.Right - Width)); Top = Math.Max(area.Top, Math.Min(Top, area.Bottom - Height)); }
-        private void Save() { try { File.WriteAllText(Path.Combine(local, "pet.json"), json.Serialize(new { left = Left, top = Top, size = petSize }), new UTF8Encoding(false)); } catch { } }
+        private void Save() { try { File.WriteAllText(Path.Combine(local, "pet.json"), json.Serialize(new { left = Left, top = Top, size = petSize, motion = motionEnabled }), new UTF8Encoding(false)); } catch { } }
         private void ShowPet() { Show(); ClampPosition(); Activate(); }
         public void OpenPanel(string page) {
-            ShowPet();
+            menu.IsOpen = false; ShowPet();
             if (panel == null) { panel = new PanelWindow(client, this); panel.Closed += (sender, e) => panel = null; }
             var area = SystemParameters.WorkArea;
             panel.Left = Math.Max(area.Left, Math.Min(Left - panel.Width + Width, area.Right - panel.Width));
             panel.Top = Math.Max(area.Top, Math.Min(Top - panel.Height - 8, area.Bottom - panel.Height));
             panel.Show(); panel.Activate(); panel.Navigate(page);
-            if (File.Exists(Path.Combine(local, "pet-test-mode"))) {
-                var test = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
-                test.Tick += (sender, e) => {
-                    test.Stop();
-                    var details = new { petVisible = IsVisible, panelVisible = panel != null && panel.IsVisible, left = Left, top = Top, petSize = petSize, width = ActualWidth, height = ActualHeight };
-                    File.WriteAllText(Path.Combine(local, "pet-window-test.json"), json.Serialize(details), new UTF8Encoding(false));
-                    var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)ActualWidth, (int)ActualHeight, 96, 96, PixelFormats.Pbgra32);
-                    bitmap.Render(this); var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
-                    using (var file = File.Create(Path.Combine(local, "pet-preview.png"))) encoder.Save(file);
-                    if (panel != null) panel.SavePreview(Path.Combine(local, "pet-panel-preview.png"));
-                }; test.Start();
-            }
+            RecordVisual();
         }
-        public void ShowError(string message) { OpenPanel("home"); panel.ShowMessage(message, true); }
+        public async Task RunUiTest() {
+            var checks = new List<string>();
+            try {
+                var originalSize = petSize;
+                SetSize(160); UpdateLayout();
+                if (Width < 184 || Height < 230 || cat.ActualWidth > Width) throw new Exception("Large skin is clipped");
+                SaveVisual(this, Path.Combine(local, "pet-large-preview.png"));
+                SetSize((int)originalSize); UpdateLayout();
+                StartMotion(); await Task.Delay(500);
+                if (CanAnimate() && (!breath.HasAnimatedProperties || !idleOffset.HasAnimatedProperties)) throw new Exception("Idle motion did not start");
+                var motionFrames = new List<object>();
+                for (int frame = 0; frame < 10; frame++) {
+                    SaveVisual(this, Path.Combine(local, "pet-motion-" + frame.ToString("D2") + ".png"));
+                    motionFrames.Add(new { frame = frame, scaleY = breath.ScaleY, offsetY = idleOffset.Y });
+                    await Task.Delay(160);
+                }
+                File.WriteAllText(Path.Combine(local, "pet-motion-test.json"), json.Serialize(new { systemAnimations = SystemParameters.ClientAreaAnimation, samples = motionFrames }), new UTF8Encoding(false));
+                Bounce(); await Task.Delay(120);
+                if (CanAnimate() && !reactionOffset.HasAnimatedProperties) throw new Exception("Click reaction did not start");
+                motionEnabled = false; StopMotion();
+                if (breath.HasAnimatedProperties || idleOffset.HasAnimatedProperties || reactionOffset.HasAnimatedProperties) throw new Exception("Motion toggle failed");
+                motionEnabled = true; StartMotion();
+                OpenMenu(); await Task.Delay(900);
+                if (breath.HasAnimatedProperties || idleOffset.HasAnimatedProperties) throw new Exception("Motion did not pause for menu");
+                if (!(cat is Image) || ((Image)cat).Source == null || !menu.IsOpen || menu.Items.Count != 4 || menu.ActualWidth > 210) throw new Exception("Compact menu failed");
+                checks.Add("dragon skin, 160px layout, idle and click motion, stop toggle and four-option menu pass");
+                string[] destinations = { "reminder", "notes", "tasks" };
+                for (int i = 0; i < destinations.Length; i++) {
+                    ((MenuItem)menu.Items[i]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                    await Task.Delay(1000);
+                    if (menu.IsOpen || panel == null || !panel.IsVisible || panel.CurrentPage != destinations[i] || panel.ActualWidth > 305 || panel.ActualHeight > 443) throw new Exception("Menu route failed: " + destinations[i]);
+                    panel.SavePreview(Path.Combine(local, "pet-" + destinations[i] + "-preview.png"));
+                    checks.Add(destinations[i] + " menu route opens compact native window");
+                    panel.Close(); OpenMenu(); await Task.Delay(200);
+                }
+                // Exercise form navigation used by add/list/back controls.
+                foreach (string destination in new[] { "reminders", "note", "task" }) {
+                    OpenPanel(destination); await Task.Delay(700);
+                    if (panel.CurrentPage != destination || !panel.IsVisible) throw new Exception("Form failed: " + destination);
+                    panel.SavePreview(Path.Combine(local, "pet-" + destination + "-preview.png"));
+                    checks.Add(destination + " native form renders");
+                }
+                panel.Close(); OpenMenu(); await Task.Delay(200); menu.IsOpen = false;
+                if (menu.IsOpen || panel != null) throw new Exception("Dismissal failed");
+                checks.Add("menu and operation window dismiss without stopping backend");
+                File.WriteAllText(Path.Combine(local, "pet-ui-test.json"), json.Serialize(new { passed = checks.Count, checks = checks }), new UTF8Encoding(false));
+            } catch (Exception e) { File.WriteAllText(Path.Combine(local, "pet-ui-error.log"), e.ToString()); }
+            finally { ExitPet(); }
+        }
+        public void ShowError(string message) { OpenPanel("reminders"); panel.ShowMessage(message, true); }
         public void Say(string message) { bubbleText.Text = message.Length > 24 ? message.Substring(0, 24) + "…" : message; bubble.Visibility = Visibility.Visible; bubbleUntil = DateTime.UtcNow.AddSeconds(7); }
         private async Task ExitAll() {
             if (MessageBox.Show("退出后拾记后台将停止，到点不会发送提醒。确定退出？", "退出拾记", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
             try { await client.Call("/desktop/shutdown", "POST", new { }); ExitPet(); } catch (Exception e) { ShowError("未能停止后台：" + e.Message); }
         }
-        private void ExitPet() { Save(); SystemParameters.StaticPropertyChanged -= WorkAreaChanged; if (panel != null) panel.Close(); allowClose = true; Close(); Application.Current.Shutdown(); }
-        private const string CatXaml = @"<Viewbox xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' Stretch='Uniform'>
-<Canvas Width='128' Height='128'>
-<Ellipse Canvas.Left='20' Canvas.Top='116' Width='93' Height='8' Fill='#257160A0'/>
-<Path Data='M 90,104 C 126,109 125,73 109,82 C 102,88 121,96 101,96' Stroke='#9782D5' StrokeThickness='12' StrokeStartLineCap='Round' StrokeEndLineCap='Round'/>
-<Path Data='M 32,72 C 24,91 28,116 43,119 L 88,119 C 105,113 104,89 94,72 Z' Fill='#BCA6EF' Stroke='#8E73C3' StrokeThickness='2'/>
-<Ellipse Canvas.Left='43' Canvas.Top='86' Width='40' Height='32' Fill='#E7DCF9'/>
-<Path Data='M 23,44 L 21,10 Q 22,3 29,8 L 51,25 L 80,25 L 101,8 Q 108,3 107,13 L 104,47 Z' Fill='#BCA6EF' Stroke='#8E73C3' StrokeThickness='2' StrokeLineJoin='Round'/>
-<Path Data='M 28,16 L 31,38 L 45,29 Z M 99,16 L 95,37 L 83,29 Z' Fill='#E9BDD9'/>
-<Ellipse Canvas.Left='19' Canvas.Top='26' Width='89' Height='64' Fill='#CDB9F3' Stroke='#8E73C3' StrokeThickness='2'/>
-<Path Data='M 53,28 Q 56,39 61,40 M 66,27 Q 67,38 72,39' Stroke='#A58AD7' StrokeThickness='4' StrokeStartLineCap='Round' StrokeEndLineCap='Round'/>
-<Canvas x:Name='Eyes' Width='128' Height='100' RenderTransformOrigin='0.5,0.58'><Canvas.RenderTransform><ScaleTransform ScaleY='1'/></Canvas.RenderTransform><Ellipse Canvas.Left='41' Canvas.Top='50' Width='7' Height='11' Fill='#49365F'/><Ellipse Canvas.Left='80' Canvas.Top='50' Width='7' Height='11' Fill='#49365F'/><Ellipse Canvas.Left='43' Canvas.Top='51' Width='2' Height='3' Fill='White'/><Ellipse Canvas.Left='82' Canvas.Top='51' Width='2' Height='3' Fill='White'/></Canvas>
-<Ellipse Canvas.Left='29' Canvas.Top='65' Width='14' Height='7' Fill='#E6A9D1' Opacity='0.7'/><Ellipse Canvas.Left='86' Canvas.Top='65' Width='14' Height='7' Fill='#E6A9D1' Opacity='0.7'/>
-<Path Data='M 60,62 Q 64,60 68,62 L 64,66 Z' Fill='#9D639A'/><Path Data='M 64,66 Q 60,73 56,68 M 64,66 Q 68,73 72,68' Stroke='#76517E' StrokeThickness='1.8' Fill='Transparent' StrokeEndLineCap='Round'/>
-<Path Data='M 39,82 Q 64,91 91,82 L 88,93 Q 64,101 41,93 Z' Fill='#7862BB'/><Ellipse Canvas.Left='60' Canvas.Top='88' Width='10' Height='12' Fill='#F6DDA0'/><Path Data='M 65,91 L 65,96' Stroke='#C1A05C' StrokeThickness='1.5'/>
-<Ellipse Canvas.Left='31' Canvas.Top='109' Width='25' Height='12' Fill='#CDB9F3' Stroke='#8E73C3' StrokeThickness='1.5'/><Ellipse Canvas.Left='74' Canvas.Top='109' Width='25' Height='12' Fill='#CDB9F3' Stroke='#8E73C3' StrokeThickness='1.5'/>
-</Canvas></Viewbox>";
+        private void ExitPet() { menu.IsOpen = false; Save(); SystemParameters.StaticPropertyChanged -= WorkAreaChanged; if (panel != null) panel.Close(); allowClose = true; Close(); Application.Current.Shutdown(); }
+        private static FrameworkElement CreatePetVisual() {
+            var bitmap = new BitmapImage();
+            using (var stream = typeof(PetWindow).Assembly.GetManifestResourceStream("Shiji.Desktop.DragonGirl.png")) {
+                if (stream == null) throw new InvalidOperationException("桌宠皮肤缺失，请重新下载完整程序。");
+                bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.StreamSource = stream; bitmap.EndInit();
+            }
+            bitmap.Freeze();
+            var visual = new Image { Source = bitmap, Stretch = Stretch.Uniform, SnapsToDevicePixels = true };
+            RenderOptions.SetBitmapScalingMode(visual, BitmapScalingMode.HighQuality);
+            return visual;
+        }
     }
 
     internal sealed class PanelWindow : Window {
@@ -298,25 +405,26 @@ namespace Shiji.Desktop {
         private readonly StackPanel body;
         private readonly TextBlock heading, message;
         private readonly ScrollViewer scroll;
-        private string page = "home", requestKey;
+        private string page = "reminder", requestKey;
         private object pendingReminder;
         private int generation;
         private bool busy;
         public PanelWindow(AssistantClient client, PetWindow pet) {
             this.client = client; this.pet = pet;
-            Title = "拾记 · 桌宠助手"; Width = Math.Min(366, SystemParameters.WorkArea.Width); Height = Math.Min(510, SystemParameters.WorkArea.Height); WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = true; FontFamily = new FontFamily("Microsoft YaHei UI"); FontSize = 14;
-            var frame = new Border { Background = Theme.Brush("#FCFAFF"), BorderBrush = Theme.Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(20), Padding = new Thickness(22) };
+            Title = "拾记 · 桌宠助手"; Width = Math.Min(304, SystemParameters.WorkArea.Width); Height = Math.Min(442, SystemParameters.WorkArea.Height); WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = true; FontFamily = new FontFamily("Microsoft YaHei UI"); FontSize = 14;
+            var frame = new Border { Background = Theme.Brush("#FCFAFF"), BorderBrush = Theme.Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(16), Padding = new Thickness(16) };
             var layout = new DockPanel(); frame.Child = layout; Content = frame;
-            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 16) }; DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header);
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 10) }; DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header);
             var close = Theme.Button("×", () => Close()); close.Width = 34; close.MinHeight = 30; close.Padding = new Thickness(0); close.FontSize = 21; DockPanel.SetDock(close, Dock.Right); header.Children.Add(close);
-            var home = Theme.Button("‹", () => Navigate("home")); home.Width = 30; home.MinHeight = 30; home.Padding = new Thickness(0); home.Margin = new Thickness(0, 0, 8, 0); home.FontSize = 22; DockPanel.SetDock(home, Dock.Left); header.Children.Add(home);
-            heading = Theme.Text("拾记", 20); heading.FontWeight = FontWeights.SemiBold; header.Children.Add(heading);
+            var home = Theme.Button("‹", Back); home.Width = 30; home.MinHeight = 30; home.Padding = new Thickness(0); home.Margin = new Thickness(0, 0, 8, 0); home.FontSize = 22; DockPanel.SetDock(home, Dock.Left); header.Children.Add(home);
+            heading = Theme.Text("拾记", 17); heading.FontWeight = FontWeights.SemiBold; header.Children.Add(heading);
             header.MouseLeftButtonDown += (sender, e) => { if (e.OriginalSource is TextBlock) DragMove(); };
             message = Theme.Text("", 12); message.Visibility = Visibility.Collapsed; message.Margin = new Thickness(0, 10, 0, 0); DockPanel.SetDock(message, Dock.Bottom); layout.Children.Add(message);
-            var foot = Theme.Text("本机保存  ·  一次性 Windows 通知", 11, Theme.Muted); foot.Margin = new Thickness(0, 12, 0, 0); DockPanel.SetDock(foot, Dock.Bottom); layout.Children.Add(foot);
+            var foot = Theme.Text("拾记  ·  本机保存", 11, Theme.Muted); foot.Margin = new Thickness(0, 12, 0, 0); DockPanel.SetDock(foot, Dock.Bottom); layout.Children.Add(foot);
             body = new StackPanel(); scroll = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; layout.Children.Add(scroll);
             KeyDown += (sender, e) => { if (e.Key == Key.Escape) Close(); };
         }
+        public string CurrentPage { get { return page; } }
         public void ShowMessage(string value, bool error = false) { message.Text = value; message.Foreground = error ? Theme.Brush("#B64D62") : Theme.Purple; message.Visibility = Visibility.Visible; }
         public void SavePreview(string path) {
             var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)ActualWidth, (int)ActualHeight, 96, 96, PixelFormats.Pbgra32); bitmap.Render(this);
@@ -333,38 +441,27 @@ namespace Shiji.Desktop {
                     case "reminders": await Reminders(version); break;
                     case "notes": await Notes(version); break;
                     case "tasks": await Tasks(version); break;
-                    default: await Home(version); break;
+                    default: ReminderForm(); break;
                 }
             } catch (Exception e) { if (version == generation) ShowMessage("未能连接拾记后台：" + e.Message, true); }
         }
-        private async Task Home(int version) {
-            heading.Text = "拾记，陪你记住";
-            body.Children.Add(Theme.Text("把小事交给我，把时间留给自己。", 13, Theme.Muted));
-            body.Children.Add(Theme.Button("◷   添加提醒", () => Navigate("reminder"), true));
-            body.Children.Add(Theme.Button("✎   写备忘录", () => Navigate("note")));
-            body.Children.Add(Theme.Button("＋   添加任务", () => Navigate("task")));
-            var row = new UniformGridCompat(3); row.Add(Theme.Button("提醒", () => Navigate("reminders"))); row.Add(Theme.Button("备忘录", () => Navigate("notes"))); row.Add(Theme.Button("任务", () => Navigate("tasks"))); body.Children.Add(row);
-            var statusText = Theme.Text("正在连接后台…", 12, Theme.Muted); statusText.Margin = new Thickness(0, 14, 0, 8); body.Children.Add(statusText);
-            body.Children.Add(Theme.Button("打开完整网页  ↗", () => client.OpenBrowser()));
-            body.Children.Add(Theme.Text("关闭这个面板后提醒继续运行。可拖动小猫；右键调整大小或收起到托盘。", 12, Theme.Muted));
-            var status = await client.Call("/notifications/status");
-            if (version != generation) return;
-            statusText.Text = AssistantClient.Flag(status, "ready") ? "● 后台已连接，通知通道就绪" : "● 通知通道暂不可用：" + AssistantClient.Text(status, "error");
-            var reminders = await client.List("/reminders");
-            if (version != generation) return;
-            var next = reminders.FirstOrDefault(r => AssistantClient.Text(r, "state") == "SCHEDULED");
-            if (next != null) body.Children.Add(Theme.Text("下一条：" + AssistantClient.TimeLabel(AssistantClient.Text(next, "scheduledAt")) + "\n" + AssistantClient.Text(next, "message"), 12, Theme.Purple));
+        private void Back() {
+            if (busy) return;
+            if (page == "reminder") Navigate("reminders");
+            else if (page == "note") Navigate("notes");
+            else if (page == "task") Navigate("tasks");
+            else { Close(); pet.OpenMenu(); }
         }
         private void ReminderForm() {
-            heading.Text = "添加一次性提醒";
-            body.Children.Add(Theme.Text("想让我在什么时候提醒你？", 13, Theme.Muted));
-            body.Children.Add(Theme.Text("提醒内容")); var text = Theme.Input("ReminderMessage", 160, true); text.MinHeight = 88; body.Children.Add(text);
+            heading.Text = "定时提醒";
+            body.Children.Add(Theme.Button("查看 / 取消已有提醒", () => Navigate("reminders")));
+            body.Children.Add(Theme.Text("提醒内容")); var text = Theme.Input("ReminderMessage", 160, true); text.MinHeight = 58; body.Children.Add(text);
             body.Children.Add(Theme.Text("提醒日期与时间（本机时区）"));
             var date = new DatePicker { SelectedDate = DateTime.Now.AddMinutes(3).Date, Margin = new Thickness(0, 0, 0, 10), Padding = new Thickness(5), FontSize = 14 }; AutomationProperties.SetAutomationId(date, "ReminderDate"); body.Children.Add(date);
             var time = Theme.Input("ReminderTime", 8); time.Text = DateTime.Now.AddMinutes(3).ToString("HH:mm:ss"); body.Children.Add(time);
             var presets = new UniformGridCompat(3);
             foreach (int minutes in new[] { 3, 10, 30 }) { int value = minutes; presets.Add(Theme.Button(value + " 分钟后", () => { var when = DateTime.Now.AddMinutes(value); date.SelectedDate = when.Date; time.Text = when.ToString("HH:mm:ss"); })); } body.Children.Add(presets);
-            body.Children.Add(Theme.Text("时间格式 14:30 或 14:30:00；确认后显示完整计划时间。", 11, Theme.Muted));
+            time.ToolTip = "时间格式：14:30 或 14:30:00";
             Button save = null;
             save = Theme.Button("添加提醒", async () => {
                 await Work(save, async () => {
@@ -393,7 +490,7 @@ namespace Shiji.Desktop {
         private void NoteForm(Dictionary<string, object> note) {
             heading.Text = note == null ? "写一条备忘录" : "编辑备忘录";
             body.Children.Clear(); body.Children.Add(Theme.Text("标题")); var title = Theme.Input("NoteTitle", 160); body.Children.Add(title);
-            body.Children.Add(Theme.Text("内容")); var content = Theme.Input("NoteContent", 20000, true); content.MinHeight = 180; body.Children.Add(content);
+            body.Children.Add(Theme.Text("内容")); var content = Theme.Input("NoteContent", 20000, true); content.MinHeight = 118; body.Children.Add(content);
             var pinned = new CheckBox { Content = "置顶这条备忘录", Foreground = Theme.Muted, Margin = new Thickness(0, 0, 0, 16) }; body.Children.Add(pinned);
             if (note != null) { title.Text = AssistantClient.Text(note, "title"); content.Text = AssistantClient.Text(note, "content"); pinned.IsChecked = AssistantClient.Flag(note, "pinned"); }
             Button save = null; save = Theme.Button("保存备忘录", async () => await Work(save, async () => {
@@ -447,7 +544,7 @@ namespace Shiji.Desktop {
             }
         }
         private async Task Tasks(int version) {
-            heading.Text = "我的任务"; var rows = await client.List("/tasks"); if (version != generation) return;
+            heading.Text = "任务表"; var rows = await client.List("/tasks"); if (version != generation) return;
             body.Children.Add(Theme.Button("＋ 添加任务", () => Navigate("task"), true));
             if (rows.Count == 0) body.Children.Add(Theme.Text("暂时没有任务，享受一下空闲。", 13, Theme.Muted));
             foreach (var row in rows.OrderBy(r => AssistantClient.Flag(r, "completed")).Take(100)) {

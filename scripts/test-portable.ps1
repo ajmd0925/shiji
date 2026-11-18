@@ -112,6 +112,13 @@ try {
         $nativeResult = Get-Content -LiteralPath (Join-Path $install '.local/pet-self-test.json') -Raw | ConvertFrom-Json
         Assert-Portable ($nativeResult.passed -ge 8) 'native desktop API checks pass (notification readiness and actual tested branch reported below)'
         $nativeResult.checks | ForEach-Object { Write-Host ('NATIVE CHECK: ' + $_) }
+        $uiTest = Start-Process -FilePath $petExecutable -ArgumentList @('--root', ('"' + $install + '"'), '--ui-test') -PassThru
+        if (!$uiTest.WaitForExit(30000)) { throw 'Native UI route test timed out.' }
+        $uiError = Join-Path $install '.local/pet-ui-error.log'
+        if (Test-Path -LiteralPath $uiError) { throw ('Native UI route test failed: ' + [IO.File]::ReadAllText($uiError)) }
+        $uiResult = Get-Content -LiteralPath (Join-Path $install '.local/pet-ui-test.json') -Raw | ConvertFrom-Json
+        Assert-Portable ($uiTest.ExitCode -eq 0 -and $uiResult.passed -eq 8) 'compact menu routes, operation windows and dismissal pass native UI checks'
+        $uiResult.checks | ForEach-Object { Write-Host ('UI CHECK: ' + $_) }
         $null = Run-Launcher 'start-desktop.ps1' @('-SkipNotificationSetup')
         $instanceHash = [Security.Cryptography.SHA256]::Create()
         try { $instance = [BitConverter]::ToString($instanceHash.ComputeHash([Text.Encoding]::UTF8.GetBytes($install.ToLowerInvariant()))).Replace('-','').ToLowerInvariant() }
@@ -125,11 +132,12 @@ try {
         $null = Run-Launcher 'start-desktop.ps1' @('-SkipNotificationSetup')
         $afterPet = @(Get-CimInstance Win32_Process -Filter "Name='Shiji.Pet.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($install) })
         Assert-Portable ($beforePet.Count -eq 1 -and $afterPet.Count -eq 1 -and $beforePet[0].ProcessId -eq $afterPet[0].ProcessId) 'repeated start shows existing pet without duplicates'
+        Start-Sleep -Milliseconds 1300
         $windowReport = Join-Path $install '.local/pet-window-test.json'
         for ($attempt=0; $attempt -lt 30 -and !(Test-Path -LiteralPath $windowReport); $attempt++) { Start-Sleep -Milliseconds 300 }
         if (!(Test-Path -LiteralPath $windowReport)) { throw 'Pet did not report a visible window after repeated start.' }
         $windowState = Get-Content -LiteralPath $windowReport -Raw | ConvertFrom-Json
-        Assert-Portable ($windowState.petVisible -and $windowState.panelVisible -and $windowState.petSize -eq 96) 'pet and native quick panel are visible at the compact default size'
+        Assert-Portable ($windowState.petVisible -and $windowState.menuVisible -and !$windowState.panelVisible -and $windowState.petSize -eq 120 -and $windowState.menuItems -eq 4 -and $windowState.menuWidth -le 210 -and $windowState.menuHeight -le 220) 'repeated start shows compact four-option menu without a dashboard'
         if ($petShow) { $petShow.Dispose() }
         $null = Run-Launcher 'stop-desktop.ps1'
         $petProcess = Get-Process -Id $beforePet[0].ProcessId -ErrorAction SilentlyContinue
