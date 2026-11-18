@@ -108,9 +108,10 @@ try {
         [IO.File]::WriteAllText((Join-Path $install '.local/pet-test-mode'), 'isolated installation only')
         $nativeTest = Start-Process -FilePath $petExecutable -ArgumentList @('--root', ('"' + $install + '"'), '--self-test') -WindowStyle Hidden -PassThru
         if (!$nativeTest.WaitForExit(60000)) { throw 'Native desktop API test timed out.' }
-        if ($nativeTest.ExitCode -ne 0) { throw 'Native desktop API test failed. Inspect isolated .local/pet-error.log.' }
+        if ($nativeTest.ExitCode -ne 0) { $nativeError = Get-Content -LiteralPath (Join-Path $install '.local/pet-error.log') -Raw -ErrorAction SilentlyContinue; throw ('Native desktop API test failed: ' + $nativeError) }
         $nativeResult = Get-Content -LiteralPath (Join-Path $install '.local/pet-self-test.json') -Raw | ConvertFrom-Json
-        Assert-Portable ($nativeResult.passed -ge 8) 'native desktop creates, retries and cancels reminders; saves Unicode notes and completes tasks'
+        Assert-Portable ($nativeResult.passed -ge 8) 'native desktop API checks pass (notification readiness and actual tested branch reported below)'
+        $nativeResult.checks | ForEach-Object { Write-Host ('NATIVE CHECK: ' + $_) }
         $null = Run-Launcher 'start-desktop.ps1' @('-SkipNotificationSetup')
         $instanceHash = [Security.Cryptography.SHA256]::Create()
         try { $instance = [BitConverter]::ToString($instanceHash.ComputeHash([Text.Encoding]::UTF8.GetBytes($install.ToLowerInvariant()))).Replace('-','').ToLowerInvariant() }

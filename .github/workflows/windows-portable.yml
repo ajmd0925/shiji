@@ -52,6 +52,7 @@ jobs:
             .local/portable-tests/**/*.err
             .local/portable-tests/**/desktop.log
             .local/portable-tests/**/desktop-error.log
+            .local/portable-tests/**/pet-error.log
       - name: Publish release on version tag
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh

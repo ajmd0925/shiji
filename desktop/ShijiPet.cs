@@ -72,6 +72,8 @@ namespace Shiji.Desktop {
                 Require(notes.Any(n => AssistantClient.Text(n, "id") == noteId && AssistantClient.Text(n, "content").Contains("第二行")), "Unicode memo roundtrip"); results.Add("Unicode memo roundtrip");
                 string key = Guid.NewGuid().ToString();
                 var input = new { title = "桌宠一次性提醒测试", message = "喝水", scheduledAt = DateTimeOffset.UtcNow.AddMinutes(10).ToString("O"), timezone = client.Timezone, requestKey = key };
+                var notificationStatus = await client.Call("/notifications/status");
+                if (AssistantClient.Flag(notificationStatus, "ready")) {
                 var reminder = await client.Call("/reminders/quick", "POST", input);
                 reminderId = AssistantClient.Text(reminder, "id"); taskId = AssistantClient.Text(reminder, "taskId");
                 Require(AssistantClient.Text(reminder, "state") == "SCHEDULED" && AssistantClient.Text(reminder, "confirmation").Contains("添加成功"), "one-step reminder with actual confirmation"); results.Add("one-step reminder with actual confirmation");
@@ -79,6 +81,13 @@ namespace Shiji.Desktop {
                 Require(AssistantClient.Text(retry, "id") == reminderId, "safe retry reuses reminder"); results.Add("safe retry reuses reminder");
                 var cancelled = await client.Call("/reminders/" + reminderId + "/cancel", "POST", new { });
                 Require(AssistantClient.Text(cancelled, "state") == "CANCELLED" && AssistantClient.Text(cancelled, "confirmation").Contains("不会再提醒"), "immediate cancellation confirmation"); results.Add("immediate cancellation confirmation");
+                } else {
+                    results.Add("notification channel unavailable on this host (not claimed as delivery verification)");
+                    var before = await client.List("/tasks");
+                    try { await client.Call("/reminders/quick", "POST", input); throw new Exception("Unavailable notification channel incorrectly accepted reminder"); }
+                    catch (ApiRequestException e) { Require(e.Status == 503, "unavailable channel returns explicit failure"); results.Add("unavailable channel returns explicit failure"); }
+                    Require((await client.List("/tasks")).Count == before.Count, "failed reminder leaves no orphan task"); results.Add("failed reminder leaves no orphan task");
+                }
                 var task = await client.Call("/tasks", "POST", new { title = "桌宠任务测试", description = "", priority = "NORMAL", completed = false });
                 string ordinaryTaskId = AssistantClient.Text(task, "id");
                 try {
