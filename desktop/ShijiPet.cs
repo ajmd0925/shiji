@@ -495,22 +495,28 @@ namespace Shiji.Desktop {
                 checks.Add("dragon skin, final-size sharp rasters, five presets and size upgrade, light and ground shadow, synchronized idle and bounce, stop toggle and four-option menu pass");
                 menu.IsOpen = false; motionEnabled = true; StartMotion();
                 if (sprite == null || sprite.FrameCount != 81) throw new Exception("Animation resources failed");
-                sprite.Wave(); int firstWave = sprite.Frame; int updatesBeforeWave = sprite.Updates;
-                await Task.Delay(100); StartMotion(); sprite.Wave();
-                if (sprite.Action != 2 || sprite.Frame <= firstWave) throw new Exception("Greeting restarted or did not advance");
+                // A hosted Windows runner may disable client animation. Test the player independently
+                // in that case while keeping the real pet subject to the system preference.
+                var playback = CanAnimate() ? sprite : new PetAnimation(source => { }, () => true);
+                playback.Start();
+                playback.Wave(); int firstWave = playback.Frame; int updatesBeforeWave = playback.Updates;
+                await Task.Delay(100); StartMotion(); playback.Wave();
+                if (playback.Action != 2 || playback.Frame <= firstWave) throw new Exception("Greeting restarted or did not advance");
                 var animationSamples = new List<object>();
                 for (int frame = 0; frame < 16; frame++) {
                     SaveVisual(this, Path.Combine(local, "pet-wave-" + frame.ToString("D2") + ".png"));
-                    animationSamples.Add(new { frame = sprite.Frame, elapsed = sprite.ElapsedMilliseconds });
+                    animationSamples.Add(new { frame = playback.Frame, elapsed = playback.ElapsedMilliseconds });
                     await Task.Delay(135);
                 }
-                if (sprite.Action != 0 || sprite.Frame != 0 || sprite.Updates - updatesBeforeWave < 25) throw new Exception("Greeting did not return to idle");
-                File.WriteAllText(Path.Combine(local, "pet-animation-test.json"), json.Serialize(new { fps = 30, samples = animationSamples, updates = sprite.Updates - updatesBeforeWave }), new UTF8Encoding(false));
-                if (!sprite.IsQuiet) throw new Exception("Idle should sleep between blinks");
-                sprite.BeginBlink(); await Task.Delay(190);
-                if (sprite.Action != 1 || sprite.Frame <= 1) throw new Exception("Blink did not advance");
+                if (playback.Action != 0 || playback.Frame != 0 || playback.Updates - updatesBeforeWave < 25) throw new Exception("Greeting did not return to idle");
+                File.WriteAllText(Path.Combine(local, "pet-animation-test.json"), json.Serialize(new { fps = 30, samples = animationSamples, updates = playback.Updates - updatesBeforeWave }), new UTF8Encoding(false));
+                if (!playback.IsQuiet) throw new Exception("Idle should sleep between blinks");
+                playback.BeginBlink(); await Task.Delay(190);
+                if (playback.Action != 1 || playback.Frame <= 1) throw new Exception("Blink did not advance");
                 SaveVisual(this, Path.Combine(local, "pet-blink-preview.png"));
                 if (skinSilhouette.Source != skinImage.Source || skinLightMask.ImageSource != skinImage.Source) throw new Exception("Lighting or shadow silhouette is stale");
+                playback.Stop();
+                if (!SystemParameters.ClientAreaAnimation && sprite.IsRunning) throw new Exception("System disabled animation was ignored");
                 motionEnabled = false; StopMotion(); int pausedUpdates = sprite.Updates;
                 await Task.Delay(150);
                 if (sprite.IsRunning || sprite.Frame != 0 || sprite.Updates != pausedUpdates) throw new Exception("Disabled animation still pumps frames");

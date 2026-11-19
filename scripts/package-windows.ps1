@@ -1,5 +1,5 @@
 param(
-    [string]$Version = '0.3.10',
+    [string]$Version = '0.3.11',
     [string]$JavaHome = $env:JAVA_HOME,
     [string]$Maven = 'mvn.cmd',
     [string]$RuntimeArchive,
