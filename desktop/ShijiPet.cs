@@ -188,6 +188,9 @@ namespace Shiji.Desktop {
         private readonly TextBlock bubbleText;
         private Image skinImage;
         private BitmapSource originalSkin;
+        private PetAnimation sprite;
+        private Image skinSilhouette;
+        private ImageBrush skinLightMask;
         private readonly Dictionary<int, BitmapSource> crispSkinCache = new Dictionary<int, BitmapSource>();
         private FrameworkElement skinLighting;
         private readonly System.Windows.Shapes.Ellipse groundShadow;
@@ -214,7 +217,7 @@ namespace Shiji.Desktop {
         public PetWindow(AssistantClient client, string root, string identity) {
             this.client = client; local = Path.Combine(root, ".local");
             UseLayoutRounding = true; SnapsToDevicePixels = true;
-            Title = "拾记桌宠"; Width = 148; Height = 174; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = false; FontFamily = new FontFamily("Microsoft YaHei UI");
+            Title = "拾记 · GPT-Pet"; Width = 148; Height = 174; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = false; FontFamily = new FontFamily("Microsoft YaHei UI");
             var area = SystemParameters.WorkArea; Left = area.Right - Width - 26; Top = area.Bottom - Height - 16;
             try {
                 var saved = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(Path.Combine(local, "pet.json")));
@@ -257,7 +260,7 @@ namespace Shiji.Desktop {
                 if (Math.Abs(delta.X) + Math.Abs(delta.Y) > 5) dragging = true;
                 if (dragging) { Left = initial.X + delta.X; Top = initial.Y + delta.Y; }
             };
-            cat.MouseLeftButtonUp += (sender, e) => { if (!cat.IsMouseCaptured) return; cat.ReleaseMouseCapture(); ClampPosition(); Save(); StartMotion(); if (!dragging) { Bounce(); Say("右键我，可以提醒、记事和看任务"); } e.Handled = true; };
+            cat.MouseLeftButtonUp += (sender, e) => { if (!cat.IsMouseCaptured) return; cat.ReleaseMouseCapture(); ClampPosition(); Save(); StartMotion(); if (!dragging) { sprite.Wave(); Say("右键我，可以提醒、记事和看任务"); } e.Handled = true; };
             menu = CreateRoundedMenu(204);
             AddMenu("◷", "定时提醒", () => OpenPanel("reminder"));
             AddMenu("✎", "备忘录", () => OpenPanel("notes"));
@@ -270,9 +273,9 @@ namespace Shiji.Desktop {
                 using (var icon = new System.Drawing.Icon(stream)) trayIcon = (System.Drawing.Icon)icon.Clone();
             }
             Icon = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(trayIcon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-            tray = new Forms.NotifyIcon { Text = "拾记 · 点击打开菜单", Icon = trayIcon, Visible = true };
+            tray = new Forms.NotifyIcon { Text = "拾记 GPT-Pet · 点击打开菜单", Icon = trayIcon, Visible = true };
             trayMenu = CreateRoundedMenu(236);
-            var heading = new MenuItem { Header = "拾记 · 个人助手", IsEnabled = false, FontSize = 12, Foreground = Theme.Muted };
+            var heading = new MenuItem { Header = "拾记 · GPT-Pet", IsEnabled = false, FontSize = 12, Foreground = Theme.Muted };
             trayMenu.Items.Add(heading);
             trayShow = AddTrayItem("☀", "显示桌宠", ShowPet);
             trayHide = AddTrayItem("☾", "隐藏桌宠（提醒继续）", HidePet);
@@ -349,7 +352,7 @@ namespace Shiji.Desktop {
             if (panel != null) panel.Close();
             Hide();
         }
-        private void WorkAreaChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e) { if (e.PropertyName == "WorkArea") ClampPosition(); }
+        private void WorkAreaChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e) { if (e.PropertyName == "WorkArea") ClampPosition(); if (e.PropertyName == "ClientAreaAnimation") { StopMotion(); StartMotion(); } }
         private void AddMenu(string icon, string label, Action action) {
             var row = new StackPanel { Orientation = Orientation.Horizontal };
             var glyph = Theme.Text(icon, 17, Theme.Purple); glyph.Width = 28; glyph.Margin = new Thickness(0); row.Children.Add(glyph);
@@ -394,13 +397,15 @@ namespace Shiji.Desktop {
         private void SetSize(int size) { petSize = size; ApplySize(); ClampPosition(); Save(); }
         private bool CanAnimate() { return motionEnabled && SystemParameters.ClientAreaAnimation && IsVisible && !cat.IsMouseCaptured && (menu == null || !menu.IsOpen) && (trayMenu == null || !trayMenu.IsOpen); }
         private void StartMotion() {
-            if (!CanAnimate()) return;
+            if (!CanAnimate() || (sprite != null && sprite.IsRunning)) return;
+            if (sprite != null) sprite.Start();
             breath.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, 1.012, TimeSpan.FromSeconds(1.8)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } });
             idleOffset.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, -2, TimeSpan.FromSeconds(1.8)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } });
             shadowBreath.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1, 0.94, TimeSpan.FromSeconds(1.8)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } });
             groundShadow.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0.8, 0.7, TimeSpan.FromSeconds(1.8)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } });
         }
         private void StopMotion() {
+            if (sprite != null) sprite.Stop();
             shadowBreath.BeginAnimation(ScaleTransform.ScaleXProperty, null);
             shadowJump.BeginAnimation(ScaleTransform.ScaleXProperty, null);
             shadowJump.BeginAnimation(ScaleTransform.ScaleYProperty, null);
@@ -488,6 +493,35 @@ namespace Shiji.Desktop {
                 if (breath.HasAnimatedProperties || idleOffset.HasAnimatedProperties) throw new Exception("Motion did not pause for menu");
                 if (skinImage == null || skinImage.Source == null || !menu.IsOpen || menu.Items.Count != 4 || menu.ActualWidth > 210) throw new Exception("Compact menu failed");
                 checks.Add("dragon skin, final-size sharp rasters, five presets and size upgrade, light and ground shadow, synchronized idle and bounce, stop toggle and four-option menu pass");
+                menu.IsOpen = false; motionEnabled = true; StartMotion();
+                if (sprite == null || sprite.FrameCount != 81) throw new Exception("Animation resources failed");
+                sprite.Wave(); int firstWave = sprite.Frame; int updatesBeforeWave = sprite.Updates;
+                await Task.Delay(100); StartMotion(); sprite.Wave();
+                if (sprite.Action != 2 || sprite.Frame <= firstWave) throw new Exception("Greeting restarted or did not advance");
+                var animationSamples = new List<object>();
+                for (int frame = 0; frame < 16; frame++) {
+                    SaveVisual(this, Path.Combine(local, "pet-wave-" + frame.ToString("D2") + ".png"));
+                    animationSamples.Add(new { frame = sprite.Frame, elapsed = sprite.ElapsedMilliseconds });
+                    await Task.Delay(135);
+                }
+                if (sprite.Action != 0 || sprite.Frame != 0 || sprite.Updates - updatesBeforeWave < 25) throw new Exception("Greeting did not return to idle");
+                File.WriteAllText(Path.Combine(local, "pet-animation-test.json"), json.Serialize(new { fps = 30, samples = animationSamples, updates = sprite.Updates - updatesBeforeWave }), new UTF8Encoding(false));
+                if (!sprite.IsQuiet) throw new Exception("Idle should sleep between blinks");
+                sprite.BeginBlink(); await Task.Delay(190);
+                if (sprite.Action != 1 || sprite.Frame <= 1) throw new Exception("Blink did not advance");
+                SaveVisual(this, Path.Combine(local, "pet-blink-preview.png"));
+                if (skinSilhouette.Source != skinImage.Source || skinLightMask.ImageSource != skinImage.Source) throw new Exception("Lighting or shadow silhouette is stale");
+                motionEnabled = false; StopMotion(); int pausedUpdates = sprite.Updates;
+                await Task.Delay(150);
+                if (sprite.IsRunning || sprite.Frame != 0 || sprite.Updates != pausedUpdates) throw new Exception("Disabled animation still pumps frames");
+                motionEnabled = true; StartMotion(); sprite.Wave(); OpenMenu(); await Task.Delay(80);
+                if (sprite.IsRunning || sprite.Frame != 0) throw new Exception("Menu did not suspend sprite playback");
+                menu.IsOpen = false; HidePet(); await Task.Delay(80);
+                if (sprite.IsRunning) throw new Exception("Hidden pet still pumps frames");
+                ShowPet(); StartMotion();
+                if (CanAnimate() && !sprite.IsRunning) throw new Exception("Animation did not resume after showing");
+                OpenMenu();
+                checks.Add("30 fps blink and interpolated greeting, repeated click, return to quiet idle, synchronized masks, disabled/menu/hidden pause pass");
                 string[] destinations = { "reminder", "notes", "tasks" };
                 for (int i = 0; i < destinations.Length; i++) {
                     ((MenuItem)menu.Items[i]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
@@ -539,6 +573,7 @@ namespace Shiji.Desktop {
             if (originalSkin == null || skinImage == null) return;
             var source = PresentationSource.FromVisual(this);
             var dpiScale = source == null || source.CompositionTarget == null ? 1 : source.CompositionTarget.TransformToDevice.M11;
+            if (sprite != null) return; // Common high-resolution cells retain all supported size/DPI settings.
             skinImage.Source = CrispSkin((int)Math.Round(petSize * dpiScale));
         }
         private BitmapSource crispAtlas;
@@ -591,11 +626,18 @@ namespace Shiji.Desktop {
                 },
                 OpacityMask = new ImageBrush(bitmap) { Stretch = Stretch.Uniform }
             };
-            skinLighting = lighting;
+            skinLighting = lighting; skinLightMask = (ImageBrush)lighting.OpacityMask;
             var layers = new Grid { Background = Brushes.Transparent };
             // Keep the crisp foreground out of the shadow effect's offscreen surface.
             var silhouette = new Image { Source = bitmap, Stretch = Stretch.Uniform, IsHitTestVisible = false, Effect = CreateContactEffect() };
+            skinSilhouette = silhouette;
+            RenderOptions.SetBitmapScalingMode(silhouette, BitmapScalingMode.HighQuality);
             layers.Children.Add(silhouette); layers.Children.Add(visual); layers.Children.Add(lighting);
+            sprite = new PetAnimation(source => {
+                skinImage.Source = source;
+                skinSilhouette.Source = source;
+                skinLightMask.ImageSource = source;
+            }, CanAnimate);
             return layers;
         }
     }
@@ -612,7 +654,7 @@ namespace Shiji.Desktop {
         private bool busy;
         public PanelWindow(AssistantClient client, PetWindow pet) {
             this.client = client; this.pet = pet;
-            Title = "拾记 · 桌宠助手"; Width = Math.Min(304, SystemParameters.WorkArea.Width); Height = Math.Min(442, SystemParameters.WorkArea.Height); WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = true; FontFamily = new FontFamily("Microsoft YaHei UI"); FontSize = 14;
+            Title = "拾记 · GPT-Pet"; Width = Math.Min(304, SystemParameters.WorkArea.Width); Height = Math.Min(442, SystemParameters.WorkArea.Height); WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true; ShowInTaskbar = true; FontFamily = new FontFamily("Microsoft YaHei UI"); FontSize = 14;
             var frame = new Border { Background = Theme.Brush("#FCFAFF"), BorderBrush = Theme.Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(16), Padding = new Thickness(16) };
             var layout = new DockPanel(); frame.Child = layout; Content = frame;
             var header = new DockPanel { Margin = new Thickness(0, 0, 0, 10) }; DockPanel.SetDock(header, Dock.Top); layout.Children.Add(header);

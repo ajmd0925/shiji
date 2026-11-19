@@ -1,6 +1,8 @@
-# 拾记 · 个人任务助手
+# 拾记 · GPT-Pet
 
-独立的个人任务、备忘录和一次性提醒系统，带可拖动的 Windows 小桌宠入口。Vue 3 + Element Plus、Spring Boot + REST、MySQL、Maven，附 Codex MCP 插件与技能，使用 MIT 许可证。与作品集项目分开维护。
+拾记 GPT-Pet（gpt-pet）是一款个人任务、备忘录和一次性提醒助手，带可拖动、会眨眼和挥手的 Windows 龙娘桌宠。Vue 3 + Element Plus、Spring Boot + REST、MySQL、Maven，附 Codex MCP 插件与技能，使用 MIT 许可证。与作品集项目分开维护。
+
+搜索关键词：`gpt`、`pet`、`gpt-pet`、`desktop-pet`、`拾记`。桌宠与提醒本地运行，不需要 GPT API。
 
 ## 提醒如何工作
 
@@ -17,13 +19,13 @@
 ## 获取源码
 
 ```powershell
-git clone https://github.com/ajmd0925/shiji.git
-cd shiji
+git clone https://github.com/ajmd0925/shiji-gpt-pet.git
+cd shiji-gpt-pet
 ```
 
 ## 安装与启动
 
-普通使用者可从仓库 [Releases 下载页](https://github.com/ajmd0925/shiji/releases) 下载 `shiji-版本-windows-x64.zip`，完整解压后双击 `Start.cmd`。便携版自带 Java 和编译后的页面，首次自动连接、注册本机通知并显示桌宠，右键桌宠打开白紫色四项小菜单，可选择定时提醒、备忘录、任务表或完整网页，无需安装开发工具或 MySQL。桌宠默认 144 个逻辑像素，可选 72/96/120/144/160 五档，支持拖动和收起到托盘；`OpenBrowser.cmd` 打开保留原样的完整网页。`Check.cmd` 检查环境，`Stop.cmd` 正常停止。默认使用 H2 本地文件数据库，MySQL 为可选配置；两种模式的数据独立。详情见 [下载版使用说明](docs/distribution.md)。源码 ZIP 不能直接双击运行。
+普通使用者可从仓库 [Releases 下载页](https://github.com/ajmd0925/shiji-gpt-pet/releases) 下载 `shiji-版本-windows-x64.zip`，完整解压后双击 `Start.cmd`。便携版自带 Java 和编译后的页面，首次自动连接、注册本机通知并显示桌宠，右键桌宠打开白紫色四项小菜单，可选择定时提醒、备忘录、任务表或完整网页，无需安装开发工具或 MySQL。桌宠默认 144 个逻辑像素，可选 72/96/120/144/160 五档，支持拖动和收起到托盘，待机自动眨眼，点击挥手，托盘“轻动作”可关闭动画；`OpenBrowser.cmd` 打开保留原样的完整网页。`Check.cmd` 检查环境，`Stop.cmd` 正常停止。默认使用 H2 本地文件数据库，MySQL 为可选配置；两种模式的数据独立。详情见 [下载版使用说明](docs/distribution.md)。源码 ZIP 不能直接双击运行。
 
 以下为源码开发方式：
 
@@ -137,4 +139,4 @@ node scripts/test-system-notifications.mjs
 
 源码为 `backend/`、`frontend/`、`plugin/`、`scripts/` 和 `docs/`。`.local/`、`.env`、生成的 `plugin/.mcp.json`、依赖、数据库、日志及截图均被忽略，不上传 GitHub。仓库不携带用户数据、访问令牌、账号凭据或 MySQL ZIP。
 
-当前面向单人本机使用，后端只绑定本机。尚未加入多人账号、互联网部署及完整迁移版本框架；公开部署需另行设计鉴权、HTTPS 和正式数据库迁移。源码仓库：[拾记 GitHub 仓库](https://github.com/ajmd0925/shiji)。
+当前面向单人本机使用，后端只绑定本机。尚未加入多人账号、互联网部署及完整迁移版本框架；公开部署需另行设计鉴权、HTTPS 和正式数据库迁移。源码仓库：[拾记 GitHub 仓库](https://github.com/ajmd0925/shiji-gpt-pet)。

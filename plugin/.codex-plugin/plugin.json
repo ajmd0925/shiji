@@ -3,5 +3,5 @@
   "description": "个人任务、备忘录与后台静默 Windows 系统提醒。",
   "author": { "name": "ajmd" }, "license": "MIT",
   "skills": "./skills/", "mcpServers": "./.mcp.json",
-  "interface": { "displayName": "拾记", "shortDescription": "记下任务和灵感，后台静默系统提醒", "category": "Productivity", "capabilities": ["Interactive", "Write"], "defaultPrompt": ["三分钟后提醒我喝水，仅一次，收到通知后再决定是否删除记录。", "记一条备忘录：周末整理读书笔记。"] }
+  "interface": { "displayName": "拾记 · GPT-Pet", "shortDescription": "记下任务和灵感，后台静默系统提醒", "category": "Productivity", "capabilities": ["Interactive", "Write"], "defaultPrompt": ["三分钟后提醒我喝水，仅一次，收到通知后再决定是否删除记录。", "记一条备忘录：周末整理读书笔记。"] }
 }

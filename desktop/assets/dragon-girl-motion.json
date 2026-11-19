@@ -1,0 +1,11 @@
+{
+  "cell": 320,
+  "columns": 9,
+  "frames": 81,
+  "fps": 30,
+  "blinkStart": 1,
+  "blinkCount": 16,
+  "waveStart": 17,
+  "waveCount": 64,
+  "method": "localized landmark interpolation of user art; canonical frozen body and face; no AI-generated new poses"
+}

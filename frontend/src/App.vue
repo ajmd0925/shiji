@@ -366,7 +366,7 @@ onUnmounted(() => clearInterval(timer));
       <a class="brand" href="#" @click.prevent="changePage('overview')"
         ><span class="brand-mark"
           ><el-icon><Check /></el-icon></span
-        ><span>拾记<small>PERSONAL SPACE</small></span></a
+        ><span>拾记<small>GPT-PET</small></span></a
       >
       <p class="nav-caption">留一点空间，给重要的事</p>
       <nav aria-label="功能导航">

@@ -8,7 +8,7 @@ $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Shiji.lnk'
 # Register only this application's identity. Never change the user's notification preferences.
 $identity = 'HKCU:\Software\Classes\AppUserModelId\Shiji.PersonalAssistant'
 New-Item -Path $identity -Force | Out-Null
-New-ItemProperty -Path $identity -Name DisplayName -Value '拾记 · 个人任务助手' -PropertyType String -Force | Out-Null
+New-ItemProperty -Path $identity -Name DisplayName -Value '拾记 · GPT-Pet' -PropertyType String -Force | Out-Null
 New-ItemProperty -Path $identity -Name ShowInSettings -Value 1 -PropertyType DWord -Force | Out-Null
 Write-Output 'Registered Shiji.PersonalAssistant for the current Windows user.'
 if (!$BridgePath) { $BridgePath = Join-Path $PSScriptRoot '../backend/src/main/resources/windows-notifications.ps1' }

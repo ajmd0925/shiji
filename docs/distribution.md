@@ -1,6 +1,6 @@
 # Windows 下载与首次使用
 
-在 [GitHub Releases 下载页](https://github.com/ajmd0925/shiji/releases) 下载 `shiji-版本-windows-x64.zip`；GitHub 自动生成的 Source code ZIP 是源码，不能直接启动。
+在 [GitHub Releases 下载页](https://github.com/ajmd0925/shiji-gpt-pet/releases) 下载 `shiji-版本-windows-x64.zip`；GitHub 自动生成的 Source code ZIP 是源码，不能直接启动。
 
 将完整 ZIP 解压到可写目录，双击 `Start.cmd`。便携版自带 Eclipse Temurin Java 21 运行时、Spring Boot 应用和编译后的 Vue 页面，无需安装开发工具、MySQL 或 Codex。首次注册通知、生成本机访问密钥并显示桌宠。右键桌宠出现白紫色紧凑菜单：定时提醒、备忘录、任务表、打开完整网页。操作窗口为 304×442 逻辑像素，可添加/取消提醒、编辑备忘录和完成任务。按 Esc 关闭菜单或窗口；单击桌宠仅显示提示，按住可拖动。原网页设计不变，双击 `OpenBrowser.cmd` 或在桌宠中选择“打开完整网页”即可使用。
 
